@@ -203,7 +203,9 @@ export class Game {
   _resize() {
     const S = this.save.settings;
     const w = window.innerWidth, h = window.innerHeight;
-    const pr = S.quality === 'low' ? Math.min(0.75, window.devicePixelRatio) : S.quality === 'medium' ? Math.min(1.25, window.devicePixelRatio) : Math.min(2, window.devicePixelRatio);
+    const base = S.quality === 'low' ? Math.min(0.75, window.devicePixelRatio) : S.quality === 'medium' ? Math.min(1.25, window.devicePixelRatio) : Math.min(2, window.devicePixelRatio);
+    this.basePixelRatio = base;
+    const pr = base * (S.dynamicRes ? (this.resScale || 1) : 1);
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h, false);
     this.composer.setPixelRatio(pr);
@@ -230,6 +232,8 @@ export class Game {
       this.mapImage = this._drawRoadsOnMap(this.world.mapImage);
     }
     this.fx.quality = S.quality === 'low' ? 0.5 : S.quality === 'medium' ? 0.8 : 1;
+    this.world.props.distScale = S.quality === 'low' ? 0.6 : S.quality === 'medium' ? 0.85 : 1;
+    this.world.terrain.lodScale = S.quality === 'low' ? 0.7 : S.quality === 'medium' ? 0.9 : 1.15;
     this.hud.setMinimapVisible(S.showMinimap);
     if (this.player) {
       Object.assign(this.player.assists, S.assists);
@@ -310,7 +314,8 @@ export class Game {
     this.endPreview();
     this._enterWorld(true);
     this.hud.toast('WELCOME TO HORIZON RUSH', 'Drive into a glowing beam to start your first race', 'cyan', 6000);
-    setTimeout(() => this.hud.toast('TIP', 'Press ESC for the menu · M for the map', '', 5000), 2500);
+    const tip = this.touch.enabled ? 'Tap II for the menu · MAP for the world map' : 'Press ESC for the menu · M for the map';
+    setTimeout(() => this.hud.toast('TIP', tip, '', 5000), 2500);
   }
 
   continueGame() {
@@ -951,6 +956,7 @@ export class Game {
     const now = performance.now();
     let dt = (now - this.lastTime) / 1000;
     this.lastTime = now;
+    this._perf(dt);
     dt = Math.min(dt, 0.1);
     this.time += dt;
     this.input.update();
@@ -969,6 +975,36 @@ export class Game {
       this.touch.setVisible(driving);
     }
     this._render();
+  }
+
+  /** Frame-time tracking, FPS readout and dynamic resolution. */
+  _perf(dt) {
+    this.fpsAcc = (this.fpsAcc || 0) + dt;
+    this.fpsFrames = (this.fpsFrames || 0) + 1;
+    if (this.fpsAcc < 1.5) return;
+    const fps = this.fpsFrames / this.fpsAcc;
+    this.fpsAcc = 0;
+    this.fpsFrames = 0;
+    this.fps = fps;
+    const S = this.save.settings;
+    if (S.showFps) {
+      if (!this.fpsEl) {
+        this.fpsEl = document.createElement('div');
+        this.fpsEl.style.cssText = 'position:absolute;left:50%;bottom:6px;transform:translateX(-50%);font:700 13px Rajdhani,sans-serif;color:#9fe;z-index:70;text-shadow:0 1px 2px #000';
+        this.uiRoot.appendChild(this.fpsEl);
+      }
+      this.fpsEl.style.display = '';
+      this.fpsEl.textContent = `${Math.round(fps)} FPS · ${Math.round((this.resScale || 1) * 100)}% RES`;
+    } else if (this.fpsEl) this.fpsEl.style.display = 'none';
+    if (!S.dynamicRes || this.state === 'loading' || document.hidden) return;
+    const prev = this.resScale || 1;
+    let next = prev;
+    if (fps < 40) next = Math.max(0.55, prev - 0.1);
+    else if (fps > 57 && prev < 1) next = Math.min(1, prev + 0.05);
+    if (next !== prev) {
+      this.resScale = next;
+      this._resize();
+    }
   }
 
   _update(dt) {

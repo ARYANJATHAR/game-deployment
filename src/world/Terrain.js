@@ -234,7 +234,7 @@ export class Terrain {
     for (const ch of this.chunks) {
       const d = Math.hypot(ch.center.x - camPos.x, ch.center.z - camPos.z) - CHUNK * this.hf.cell * 0.5;
       let lod = 3;
-      for (let k = 0; k < LOD_DIST.length; k++) if (d < LOD_DIST[k]) { lod = k; break; }
+      for (let k = 0; k < LOD_DIST.length; k++) if (d < LOD_DIST[k] * (this.lodScale || 1)) { lod = k; break; }
       if (lod !== ch.lod) {
         if (!ch.geos[lod]) {
           if (built >= budget && ch.lod >= 0) continue;

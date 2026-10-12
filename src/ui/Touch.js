@@ -6,6 +6,7 @@ export class TouchControls {
     this.input = input;
     this.enabled = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     this.root = el('div', `touch interactive ${this.enabled ? 'on' : ''}`);
+    if (this.enabled) document.body.classList.add('touchmode');
     root.insertBefore(this.root, root.firstChild);
     this.steer = el('div', 'tsteer', '<div class="knob"></div>');
     this.root.appendChild(this.steer);
@@ -39,9 +40,10 @@ export class TouchControls {
     btn('⏪', { right: '24px', bottom: 'calc(162px + env(safe-area-inset-bottom, 0px))', width: '60px', height: '60px' }, () => { input.touch.buttons.rewind = true; }, () => { input.touch.buttons.rewind = false; });
     btn('II', { right: '18px', top: '18px', width: '52px', height: '52px' }, () => { input.touch.buttons.pause = true; }, () => { input.touch.buttons.pause = false; });
     btn('CAM', { right: '80px', top: '18px', width: '52px', height: '52px', fontSize: '11px' }, () => { input.touch.buttons.camera = true; }, () => { input.touch.buttons.camera = false; });
+    btn('MAP', { right: '142px', top: '18px', width: '52px', height: '52px', fontSize: '11px' }, () => { input.touch.buttons.map = true; }, () => { input.touch.buttons.map = false; });
     btn('GO', { left: '50%', bottom: 'calc(140px + env(safe-area-inset-bottom, 0px))', width: '64px', height: '64px', marginLeft: '-32px', display: 'none' }, () => { input.touch.buttons.confirm = true; }, () => { input.touch.buttons.confirm = false; });
     window.addEventListener('touchstart', () => {
-      if (!this.enabled) { this.enabled = true; this.root.classList.add('on'); }
+      if (!this.enabled) { this.enabled = true; this.root.classList.add('on'); document.body.classList.add('touchmode'); }
     }, { passive: true });
   }
 

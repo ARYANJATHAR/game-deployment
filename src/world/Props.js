@@ -298,7 +298,7 @@ export class Props {
       const c = m.userData.center;
       if (!c) continue;
       const d = Math.hypot(c.x - camPos.x, c.z - camPos.z) - REGION * 0.7;
-      m.visible = d < m.userData.dist;
+      m.visible = d < m.userData.dist * (this.distScale || 1);
     }
     // debris physics
     for (let i = this.debris.length - 1; i >= 0; i--) {

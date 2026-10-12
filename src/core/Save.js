@@ -23,6 +23,8 @@ export const DEFAULT_SETTINGS = {
   traffic: true,
   invertLook: false,
   ghost: true,
+  dynamicRes: true,
+  showFps: false,
 };
 
 export function defaultProgress() {
@@ -53,6 +55,14 @@ export function defaultProgress() {
 export class Save {
   constructor() {
     this.settings = structuredClone(DEFAULT_SETTINGS);
+    // first launch: pick a sensible quality for the device
+    const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) || (navigator.maxTouchPoints > 1 && window.innerWidth < 1100);
+    const cores = navigator.hardwareConcurrency || 4;
+    if (mobile || cores <= 4) {
+      this.settings.quality = 'low';
+      this.settings.shadows = mobile ? 'off' : 'low';
+      this.settings.bloom = !mobile;
+    }
     this.progress = defaultProgress();
     this.load();
   }

@@ -497,7 +497,9 @@ export class Menus {
     seg('Quality', 'Draw distance, resolution and effects', [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']], () => S.quality, (v) => { S.quality = v; });
     seg('Shadows', 'Sun shadow resolution', [['off', 'Off'], ['low', 'Low'], ['medium', 'Med'], ['high', 'High']], () => S.shadows, (v) => { S.shadows = v; });
     seg('Bloom', 'Glow on lights and highlights', onoff, () => S.bloom, (v) => { S.bloom = v; });
-    seg('Speed effects', 'Vignette and camera shake at speed', onoff, () => S.motionBlur, (v) => { S.motionBlur = v; });
+    seg('Speed effects', 'Blur, vignette and camera shake at speed', onoff, () => S.motionBlur, (v) => { S.motionBlur = v; });
+    seg('Dynamic resolution', 'Lowers resolution automatically to keep the frame rate smooth', onoff, () => S.dynamicRes !== false, (v) => { S.dynamicRes = v; });
+    seg('Show FPS', '', onoff, () => !!S.showFps, (v) => { S.showFps = v; });
     slider('Field of view', 'Chase camera FOV', 50, 80, 1, () => S.fov, (v) => { S.fov = v; });
     seg('Camera', 'Default driving view (C to cycle)', CAMERA_MODES.map((m, i) => [i, m]), () => S.camera, (v) => { S.camera = v; });
     section('World');

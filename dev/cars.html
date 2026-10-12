@@ -1,0 +1,39 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Car viewer</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#888}</style></head>
+<body><script type="module">
+import * as THREE from 'three';
+import { Sky } from 'three/addons/objects/Sky.js';
+import { CARS } from '/src/config/cars.js';
+import { buildCar } from '/src/vehicle/CarBuilder.js';
+const r = new THREE.WebGLRenderer({ antialias: true });
+r.setSize(innerWidth, innerHeight);
+r.toneMapping = THREE.ACESFilmicToneMapping;
+r.shadowMap.enabled = true;
+document.body.appendChild(r.domElement);
+const scene = new THREE.Scene();
+const sky = new Sky(); sky.scale.setScalar(1000); sky.material.uniforms.sunPosition.value.set(1, 0.4, 0.6);
+const pm = new THREE.PMREMGenerator(r);
+const es = new THREE.Scene(); es.add(sky);
+scene.environment = pm.fromScene(es).texture;
+scene.background = new THREE.Color('#9ab');
+const sun = new THREE.DirectionalLight('#fff', 2.5); sun.position.set(10, 15, 8); sun.castShadow = true;
+sun.shadow.camera.left = -30; sun.shadow.camera.right = 30; sun.shadow.camera.top = 30; sun.shadow.camera.bottom = -30;
+scene.add(sun, new THREE.HemisphereLight('#bcd', '#554', 0.8));
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(100, 100).rotateX(-Math.PI/2), new THREE.MeshStandardMaterial({ color: '#777' }));
+ground.receiveShadow = true; scene.add(ground);
+const q = new URLSearchParams(location.search);
+const view = q.get('view') || 'side';
+CARS.forEach((c, i) => {
+  const m = buildCar(c);
+  const col = i % 5, row = Math.floor(i / 5);
+  m.root.position.set((col - 2) * 6, 0, row * 8 - 4);
+  m.root.rotation.y = view === 'side' ? Math.PI / 2 : view === 'front' ? 0 : view === 'rear' ? Math.PI : Math.PI * 0.75;
+  scene.add(m.root);
+});
+const cam = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.1, 500);
+cam.position.set(0, 14, 34); cam.lookAt(0, 0, 0);
+if (q.get('cam') === 'close') { cam.position.set(-12, 2.2, 3); cam.lookAt(-12, 0.6, -4); }
+r.render(scene, cam);
+window.__done = true;
+</script></body></html>

@@ -7,14 +7,14 @@ export function buildEventRoute(roads, ev) {
     if (!r) return null;
     if (r.closed) {
       const pts = roads.walkDistance(r, 0, r.length, ev.reverse ? -1 : 1);
-      return new Route(pts, ev.type === 'circuit');
+      return new Route(pts, ev.type === 'circuit' || !!ev.closedSprint);
     }
     const pts = ev.reverse ? roads.walkDistance(r, r.count - 1, r.length, -1) : roads.walkDistance(r, 0, r.length, 1);
     // trim the very ends that sit inside junctions
     return new Route(pts.slice(6, pts.length - 6), false);
   }
   const wp = ev.waypoints;
-  const closed = ev.type === 'circuit';
+  const closed = ev.type === 'circuit' || !!ev.closedSprint;
   const pts = [];
   const legs = closed ? wp.length : wp.length - 1;
   for (let k = 0; k < legs; k++) {

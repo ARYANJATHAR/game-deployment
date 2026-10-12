@@ -22,7 +22,7 @@ export class Environment {
     const u = this.sky.material.uniforms;
     u.turbidity.value = 3;
     u.rayleigh.value = 2;
-    u.mieCoefficient.value = 0.005;
+    u.mieCoefficient.value = 0.0035;
     u.mieDirectionalG.value = 0.8;
     scene.add(this.sky);
 
@@ -43,6 +43,7 @@ export class Environment {
     scene.fog = new THREE.Fog('#bfd3e6', 300, 2600);
 
     this._stars();
+    this._clouds();
 
     // env map for reflections
     this.pmrem = new THREE.PMREMGenerator(renderer);
@@ -81,6 +82,66 @@ export class Environment {
     this.stars = new THREE.Points(g, this.starMat);
     this.stars.renderOrder = -1;
     this.scene.add(this.stars);
+  }
+
+  _clouds() {
+    this.cloudUniforms = {
+      time: { value: 0 },
+      coverage: { value: 0.45 },
+      night: { value: 0 },
+      sunDir: { value: new THREE.Vector3(0, 1, 0) },
+      sunColor: { value: new THREE.Color('#ffffff') },
+      brightness: { value: 1.6 },
+    };
+    const mat = new THREE.ShaderMaterial({
+      uniforms: this.cloudUniforms,
+      transparent: true,
+      depthWrite: false,
+      side: THREE.BackSide,
+      fog: false,
+      vertexShader: `
+        varying vec3 vDir;
+        void main() {
+          vDir = position;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `
+        uniform float time, coverage, night, brightness;
+        uniform vec3 sunDir, sunColor;
+        varying vec3 vDir;
+        float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float noise(vec2 p) {
+          vec2 i = floor(p), f = fract(p);
+          vec2 u = f * f * (3.0 - 2.0 * f);
+          return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+        }
+        float fbm(vec2 p) {
+          float s = 0.0, a = 0.5;
+          for (int i = 0; i < 5; i++) { s += a * noise(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; }
+          return s;
+        }
+        void main() {
+          vec3 d = normalize(vDir);
+          if (d.y < 0.0) discard;
+          vec2 uv = d.xz / (d.y + 0.1) * 1.4 + vec2(time * 0.006, time * 0.0035);
+          float n = fbm(uv);
+          float c = smoothstep(1.0 - coverage, 1.0 - coverage + 0.32, n);
+          float n2 = fbm(uv + sunDir.xz * 0.12);
+          float shade = clamp(1.0 - (n2 - n) * 3.0, 0.45, 1.2);
+          vec3 base = mix(vec3(0.55, 0.6, 0.7), vec3(1.0), shade);
+          vec3 col = base * mix(sunColor, vec3(1.0), 0.35) * brightness;
+          col *= mix(1.0, 0.04, night);
+          float horizon = smoothstep(0.0, 0.25, d.y);
+          gl_FragColor = vec4(col, c * horizon * 0.95);
+          #include <tonemapping_fragment>
+          #include <colorspace_fragment>
+        }`,
+    });
+    this.clouds = new THREE.Mesh(new THREE.SphereGeometry(3000, 32, 12, 0, Math.PI * 2, 0, Math.PI / 2), mat);
+    this.clouds.renderOrder = -2;
+    this.clouds.frustumCulled = false;
+    this.scene.add(this.clouds);
+    this.cloudTime = 0;
   }
 
   _rainSystem() {
@@ -130,7 +191,7 @@ export class Environment {
 
     const u = this.sky.material.uniforms;
     u.sunPosition.value.copy(this.sunDir);
-    u.rayleigh.value = lerp(2.2, 0.35, night) + this.rain * 1.5;
+    u.rayleigh.value = lerp(3.0, 0.35, night) + this.rain * 1.5;
     u.turbidity.value = 2.6 + this.rain * 12 + this.fog * 6;
     const eu = this.envSky.material.uniforms;
     for (const k of ['turbidity', 'rayleigh', 'mieCoefficient', 'mieDirectionalG']) eu[k].value = u[k].value;
@@ -163,7 +224,7 @@ export class Environment {
     this.hemi.groundColor.set(night > 0.5 ? '#151515' : '#5b5140');
 
     // fog colour approximates horizon colour
-    const dayFog = new THREE.Color('#b9d0e6');
+    const dayFog = new THREE.Color('#a9c6e4');
     const duskFog = new THREE.Color('#e3a77c');
     const nightFog = new THREE.Color('#0d1424');
     const rainFog = new THREE.Color('#8e9aa6');
@@ -172,9 +233,19 @@ export class Environment {
     const far = lerp(3400, 1100, this.rain * 0.55 + this.fog * 0.6);
     this.scene.fog.near = lerp(450, 90, this.fog);
     this.scene.fog.far = far;
-    this.renderer.toneMappingExposure = lerp(0.72, 0.9, night) * lerp(1, 0.9, this.rain);
+    this.renderer.toneMappingExposure = lerp(0.66, 0.9, night) * lerp(1, 0.9, this.rain);
     this.starMat.opacity = night * (1 - this.rain);
     this.stars.position.copy(focus);
+    // clouds follow the camera and thicken with bad weather
+    this.cloudTime += dt;
+    const cu = this.cloudUniforms;
+    cu.time.value = this.cloudTime;
+    cu.coverage.value = lerp(0.42, 0.95, Math.max(this.rain, this.fog * 0.7));
+    cu.night.value = night;
+    cu.sunDir.value.copy(this.sunDir);
+    cu.sunColor.value.copy(sunColor);
+    cu.brightness.value = lerp(1.7, 0.7, this.rain) * (0.6 + 0.4 * sunUp + 0.4 * golden * (1 - night));
+    this.clouds.position.set(focus.x, 0, focus.z);
 
     // environment map refresh
     if (force || Math.abs(this.time - this.lastEnvTime) > 0.25 || Math.abs((this._lastRain || 0) - this.rain) > 0.1) {

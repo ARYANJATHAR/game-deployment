@@ -3,6 +3,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
 import { World } from './world/World.js';
 import { WORLD, POI } from './world/WorldConfig.js';
@@ -16,6 +17,7 @@ import { AIController } from './vehicle/AIController.js';
 import { setPaintFinish, buildCar } from './vehicle/CarBuilder.js';
 import { CARS, carStats, PAINTS, UPGRADES } from './config/cars.js';
 import { EVENTS, POSITION_REWARD } from './config/events.js';
+import { ACCOLADES } from './config/accolades.js';
 import { VehicleFX } from './fx/VehicleFX.js';
 import { RouteDisplay } from './fx/RouteDisplay.js';
 import { AudioEngine, STATIONS } from './audio/Audio.js';
@@ -24,6 +26,7 @@ import { buildEventRoute } from './gameplay/RouteBuilder.js';
 import { Race } from './gameplay/Race.js';
 import { Activities } from './gameplay/Activities.js';
 import { Skills } from './gameplay/Skills.js';
+import { GhostRecorder, GhostPlayer, loadGhost } from './gameplay/Ghost.js';
 import { HUD } from './ui/HUD.js';
 import { Menus } from './ui/Menus.js';
 import { MapView } from './ui/MapView.js';
@@ -178,6 +181,22 @@ export class Game {
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.45, 0.4, 2.4);
     this.composer.addPass(this.bloom);
+    // radial blur toward the screen centre at high speed
+    this.speedBlur = new ShaderPass({
+      uniforms: { tDiffuse: { value: null }, strength: { value: 0 } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `
+        uniform sampler2D tDiffuse; uniform float strength; varying vec2 vUv;
+        void main() {
+          vec2 dir = vUv - vec2(0.5, 0.55);
+          float k = smoothstep(0.15, 0.7, length(dir)) * strength;
+          vec4 c = vec4(0.0);
+          for (int i = 0; i < 8; i++) c += texture2D(tDiffuse, vUv - dir * k * float(i) / 8.0);
+          gl_FragColor = c / 8.0;
+        }`,
+    });
+    this.speedBlur.enabled = false;
+    this.composer.addPass(this.speedBlur);
     this.composer.addPass(new OutputPass());
   }
 
@@ -563,7 +582,7 @@ export class Game {
     const playerEntry = this.save.currentCar;
     const pDef = CARS.find((c) => c.id === playerEntry.id);
     const pPI = carStats(pDef, playerEntry.upgrades).pi;
-    let n = ev.type === 'showcase' ? 0 : ev.opponents ?? 7;
+    let n = ev.type === 'showcase' || ev.type === 'drift' ? 0 : ev.opponents ?? 7;
     const r = rng(Date.now() & 0xffff);
     // pick opponents near the player's PI
     const pool = [...CARS].sort((a, b) => Math.abs(a.pi - pPI) - Math.abs(b.pi - pPI));
@@ -597,6 +616,13 @@ export class Game {
     race.dispose();
     this.race = new Race(this.scene, ev, route, participants);
     this.raceRoute = route;
+    this._disposeGhost();
+    this.ghostRec = new GhostRecorder();
+    const gd = loadGhost(ev.id);
+    if (gd && S.ghost !== false) {
+      this.ghost = new GhostPlayer(this.scene, gd);
+      this.hud.toast('RIVAL GHOST', `Your best: ${formatTime(gd.time)}`, 'cyan', 3000);
+    }
     // racing line profile for the player's braking line
     const pp = this.player.p;
     this.playerProfile = route.speedProfile(0.9 * pp.grip + Math.min(0.3, pp.downforce * 0.05), 0.85 * pp.brake, 120, pp.offroad);
@@ -609,6 +635,11 @@ export class Game {
     this.hud.toast(ev.name.toUpperCase(), ev.type === 'circuit' ? `${ev.laps} laps · ${(route.length / 1000).toFixed(1)} km` : `${(route.length / 1000).toFixed(1)} km`, 'cyan', 2500);
   }
 
+  _disposeGhost() {
+    if (this.ghost) this.ghost.dispose();
+    this.ghost = null;
+  }
+
   _clearOpponents() {
     for (const v of this.opponents) this._removeVehicle(v);
     this.opponents = [];
@@ -617,6 +648,7 @@ export class Game {
   restartEvent() {
     const id = this.race ? this.race.ev.id : this.lastEventId;
     if (this.race) { this.race.dispose(); this.race = null; }
+    this._disposeGhost();
     this.menus.closeAll();
     this.audio.suspend(false);
     if (id) this.startEvent(id);
@@ -624,6 +656,7 @@ export class Game {
 
   quitEvent(silent = false) {
     if (!this.race) return;
+    this._disposeGhost();
     this.race.dispose();
     this.race = null;
     this._clearOpponents();
@@ -679,6 +712,14 @@ export class Game {
     const pl = race.p.find((x) => x.isPlayer);
     const rows = race.standings().map((pp) => ({ name: pp.name, car: pp.car, time: race.estimate(pp), me: pp.isPlayer, dnf: !pp.finished && !pp.isPlayer && pp.progress < race.total * 0.5 }));
     let pos = race.positionOf(pl);
+    if (ev.type === 'drift') {
+      const score = Math.round(race.driftScore || 0);
+      const stars = ev.stars.filter((t) => score >= t).length;
+      pos = stars === 3 ? 1 : stars === 2 ? 2 : stars === 1 ? 3 : 4;
+      rows.length = 0;
+      rows.push({ name: 'You', car: pl.car, time: pl.finishTime, me: true });
+      race.resultNote = `${formatNumber(score)} PTS · ${'★'.repeat(stars)}${'☆'.repeat(3 - stars)}`;
+    }
     if (ev.type === 'showcase') {
       const jetTime = race.jetFinished ? race.jetTime : race.time + (race.route.length - race.jetS) / Math.max(1, race.jetV);
       rows.push({ name: 'Stunt Jet', car: 'Aerobatic Jet', time: jetTime, me: false });
@@ -694,10 +735,15 @@ export class Game {
     const time = pl.finishTime;
     const record = !prev || time < prev.best;
     p.events[ev.id] = { best: record ? time : prev.best, position: prev ? Math.min(prev.position, pos) : pos };
+    if (record && this.ghostRec && isFinite(time)) {
+      const entry = this.save.currentCar;
+      this.ghostRec.save(ev.id, entry.id, entry.paint, time);
+    }
     if (pos === 1) p.stats.wins++;
     this.addXP(xp, credits);
     this.save.save();
-    const title = pos === 1 ? 'Victory!' : ev.type === 'showcase' ? 'Beaten by the jet' : `Finished ${pos}${['st', 'nd', 'rd'][pos - 1] || 'th'}`;
+    let title = pos === 1 ? 'Victory!' : ev.type === 'showcase' ? 'Beaten by the jet' : `Finished ${pos}${['st', 'nd', 'rd'][pos - 1] || 'th'}`;
+    if (ev.type === 'drift') title = race.resultNote;
     this.state = 'results';
     this.menus.results({ event: ev, rows, credits, xp, record, title });
     this.lastEventId = ev.id;
@@ -708,6 +754,7 @@ export class Game {
     setTimeout(() => {
       const r = this.race;
       if (r) { r.dispose(); this.race = null; }
+      this._disposeGhost();
       this._clearOpponents();
       this.player.ai = null;
       this.player.frozen = false;
@@ -834,11 +881,14 @@ export class Game {
 
   _hookSkills() {
     this.skills.on('skill', (d) => {
+      if (d.name === 'near') this.save.progress.stats.nearMisses = (this.save.progress.stats.nearMisses || 0) + 1;
       this.skillNames.unshift(d.label);
       if (this.skillNames.length > 3) this.skillNames.pop();
       this.audio.skill(Math.min(8, d.mult));
     });
     this.skills.on('bank', (d) => {
+      const st = this.save.progress.stats;
+      st.bestChain = Math.max(st.bestChain || 0, d.total);
       this.hud.skillBank(d.total);
       this.audio.bank();
       this.addXP(d.total * 0.08, d.total * 0.05);
@@ -1014,6 +1064,11 @@ export class Game {
     if (this.race) {
       const events = [];
       this.race.update(dt, events);
+      if (this.race.state === 'running') {
+        const me = this.race.p.find((x) => x.isPlayer);
+        if (me && !me.finished && this.ghostRec) this.ghostRec.record(this.race.time, pl);
+        if (this.ghost) this.ghost.update(this.race.time);
+      }
       for (const e of events) this._onRaceEvent(e);
       if (this.finishTimer !== undefined && this.finishTimer > 0) {
         this.finishTimer -= dt;
@@ -1035,8 +1090,16 @@ export class Game {
     // skills
     const others = [...this.traffic.map((t) => t.v), ...this.opponents];
     this.skills.update(dt, pl, others, {
-      onDrift: (pts) => { this.save.progress.stats.drifts += Math.round(pts); },
-      onAir: (t) => { this.save.progress.stats.airtime += t; },
+      onDrift: (pts) => {
+        const st = this.save.progress.stats;
+        st.drifts += Math.round(pts);
+        st.bestDrift = Math.max(st.bestDrift || 0, pts);
+      },
+      onAir: (t) => {
+        const st = this.save.progress.stats;
+        st.airtime += t;
+        st.bestAir = Math.max(st.bestAir || 0, t);
+      },
     });
 
     this._updateTraffic(dt);
@@ -1080,6 +1143,18 @@ export class Game {
     // stats
     const ps = this.save.progress.stats;
     ps.distance += pl.speed * dt;
+    if (this.world.env.nightAmount > 0.5) ps.nightDistance = (ps.nightDistance || 0) + pl.speed * dt;
+    // accolades & barn finds
+    this.accTimer = (this.accTimer || 0) - dt;
+    if (this.accTimer <= 0) {
+      this.accTimer = 1.5;
+      this._checkAccolades();
+      if (st === 'freeroam') this._checkBarns();
+    }
+    if (this.race && this.race.ev.type === 'drift' && this.race.state === 'running') {
+      const da = Math.abs(pl.driftAngle);
+      if (pl.grounded && da > 0.26 && da < 1.6 && pl.speed > 8) this.race.driftScore = (this.race.driftScore || 0) + pl.speed * da * 28 * dt * this.skills.mult;
+    }
     ps.topSpeed = Math.max(ps.topSpeed, pl.speedKmh);
     this.lastStatSave += dt;
     if (this.lastStatSave > 20) { this.lastStatSave = 0; this._persistPosition(); }
@@ -1125,7 +1200,9 @@ export class Game {
     }
     if (steps >= 12) this.acc = 0;
     for (const v of sleeping) v.frozen = false;
+    const lightsOn = this.world.env.nightAmount > 0.35 || this.world.env.rain > 0.5 || this.world.env.fog > 0.5;
     for (const v of this.physics.vehicles) {
+      if (v !== this.player) v.lightsOn = lightsOn;
       v.root.updateMatrixWorld();
       v.syncVisual(dt);
     }
@@ -1194,6 +1271,42 @@ export class Game {
     for (const t of this.traffic) t.ai.hint = -1;
     this.skills.breakChain('');
     this.fx.skids.last.clear();
+  }
+
+  // ---------- accolades / barns ----------
+  _checkAccolades() {
+    const p = this.save.progress;
+    p.accolades = p.accolades || [];
+    const ctx = { bestDrift: p.stats.bestDrift || 0, bestAir: p.stats.bestAir || 0 };
+    for (const a of ACCOLADES) {
+      if (p.accolades.includes(a.id)) continue;
+      let ok = false;
+      try { ok = a.check(p, p.stats, ctx); } catch (e) { ok = false; }
+      if (!ok) continue;
+      p.accolades.push(a.id);
+      this.hud.toast(`ACCOLADE: ${a.name.toUpperCase()}`, `${a.desc} · +${formatNumber(a.cr)} CR`, 'gold', 4500);
+      this.audio.fanfare();
+      this.addXP(a.xp, a.cr);
+      this.save.save();
+      break; // one per check keeps toasts readable
+    }
+  }
+
+  _checkBarns() {
+    const p = this.save.progress;
+    p.barns = p.barns || [];
+    const pl = this.player;
+    for (const b of this.world.scenery.barns) {
+      if (p.barns.includes(b.id)) continue;
+      if (Math.hypot(b.x - pl.pos.x, b.z - pl.pos.z) > 32) continue;
+      p.barns.push(b.id);
+      const car = CARS.find((c) => c.id === b.car);
+      this.save.addCar(car.id, b.paint, { finish: 'matte' });
+      this.save.save();
+      this.hud.toast('BARN FIND!', `You discovered a ${car.year} ${car.name}. It's been added to your garage.`, 'gold', 6000);
+      this.audio.fanfare();
+      this.addXP(3000, 0);
+    }
   }
 
   // ---------- activities ----------
@@ -1279,6 +1392,11 @@ export class Game {
         const gap = me.progress - r.jetS;
         info.extra = ['JET', `${gap >= 0 ? '+' : ''}${Math.round(gap)} m`];
       }
+      if (r.ev.type === 'drift') {
+        info.position = null;
+        info.extra = ['SCORE', formatNumber(Math.round(r.driftScore || 0))];
+        info.best = null;
+      }
       if (r.p.length > 2) info.standings = r.standings().map((x) => ({ name: x.name, me: x.isPlayer }));
       hud.setRace(info);
       // wrong way
@@ -1303,8 +1421,15 @@ export class Game {
     const pend = sk.pending();
     hud.skillUpdate(Math.round(sk.chain + pend), sk.mult, this.skillNames.join(' + '), sk.activeName(), sk.timer);
     // speed vignette
-    if (S.motionBlur) hud.setVignette(clamp((pl.speedKmh - 180) / 160, 0, 0.8));
-    else hud.setVignette(0);
+    if (S.motionBlur) {
+      hud.setVignette(clamp((pl.speedKmh - 180) / 160, 0, 0.8));
+      const b = clamp((pl.speedKmh - 170) / 180, 0, 1) * 0.06;
+      this.speedBlur.uniforms.strength.value = b;
+      this.speedBlur.enabled = b > 0.002;
+    } else {
+      hud.setVignette(0);
+      this.speedBlur.enabled = false;
+    }
   }
 
   _routeSlice(route, v, len) {

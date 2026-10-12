@@ -51,7 +51,7 @@ Touch devices get on-screen steering, pedals, handbrake and rewind buttons.
 - A road network of 15 roads (about 30 km): a 12 km coastal highway loop, avenues, a mountain pass with guard rails, town streets, dirt trails and a runway. Junction heights and road grades are solved automatically.
 - About 18,000 instanced trees, plus rocks, bushes, palms, lamp posts, fences, hay bales, signs, wind turbines and a lighthouse.
 - Smashable props: fences, cones, lamps, signs and hay bales, plus 40 hidden XP boards.
-- A day/night cycle with a physical sky, stars, headlights, lit windows and street lamps.
+- A day/night cycle with a physical sky, animated procedural clouds, stars, headlights, lit windows and street lamps.
 - Dynamic weather: clear, rain (wet roads with reduced grip), fog and storms.
 - Four seasons that recolour the island: summer, autumn, winter and spring.
 
@@ -59,11 +59,13 @@ Touch devices get on-screen steering, pedals, handbrake and rewind buttons.
 - 10 cars, from a hot hatch to a Le Mans prototype. Each has its own procedurally modelled body, wheels, lights and spoilers, plus its own drivetrain (FWD, RWD or AWD), torque curve, gearbox, weight distribution, downforce and off-road ability.
 - Raycast suspension with anti-roll bars, a slip-based tyre model with a friction ellipse, surface grip (asphalt, dirt, grass, sand, snow), aerodynamic drag and downforce, slipstreaming, and collisions with the world and other cars.
 - Assists: ABS, traction control, stability control, steering assist, automatic or manual gearbox, and a racing line or braking-only line.
-- Four cameras (chase, far chase, hood, bumper), free look and look back.
+- Four cameras (chase, far chase, hood, bumper), free look, look back, and speed effects (radial blur, vignette and camera shake).
 - A 12-second rewind.
 
 **Gameplay**
-- 10 events: road and street circuits, sprints, a dirt-trail scramble, a mountain hillclimb, a canyon rally, a 12 km island tour, a drag race and a "beat the jet" showcase.
+- 12 events: road and street circuits, sprints, a dirt-trail scramble, a mountain hillclimb, a canyon rally, a 12 km island tour, a drag race, a "beat the jet" showcase and two drift-score events.
+- Rival ghosts: your best run in each event is saved and replayed as a translucent car the next time you race it.
+- 24 accolades (long-term goals) with credit and XP rewards, and 4 hidden barn finds with rumour areas marked on the map.
 - Drivatar AI opponents with a racing line, braking-point planning, overtaking, recovery, rubber-banding and four difficulty levels.
 - Activities: 5 speed traps, 3 speed zones, 3 drift zones and danger-sign jumps, each with 1–3 star ratings.
 - Skill chains: drift, air, speed, near miss, wreckage and drafting, with a growing multiplier that banks into XP and credits.

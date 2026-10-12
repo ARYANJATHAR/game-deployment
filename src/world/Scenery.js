@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { rng, Simplex2, smoothstep } from '../core/utils.js';
-import { POI, WORLD } from './WorldConfig.js';
+import { POI, WORLD, BARNS } from './WorldConfig.js';
 import { SURF } from './Heightfield.js';
 import { makeFacade, makeBannerTexture, makeWaterNormal } from './Textures.js';
 import { mergeByMaterial } from '../core/merge.js';
@@ -34,6 +34,7 @@ export class Scenery {
     this._airfield();
     this._xpBoards();
     this._ramps();
+    this._barns();
     this.props.build();
   }
 
@@ -659,6 +660,38 @@ export class Scenery {
       mesh.castShadow = mesh.receiveShadow = true;
       this.group.add(mesh);
       this.jumps.push({ x: x + road.tx[i] * sp.len, z: z + road.tz[i] * sp.len, road, i, ang, name: `${road.name} Jump` });
+    }
+  }
+
+  _barns() {
+    const hf = this.hf;
+    this.barns = [];
+    const wall = new THREE.MeshStandardMaterial({ color: '#8e2a20', roughness: 0.85 });
+    const trim = new THREE.MeshStandardMaterial({ color: '#efe8dc', roughness: 0.8 });
+    const roofM = new THREE.MeshStandardMaterial({ color: '#3b3f45', roughness: 0.7, side: THREE.DoubleSide });
+    for (const b of BARNS) {
+      // nudge onto dry, gentle, road-free ground
+      let x = b.x, z = b.z;
+      for (let k = 0; k < 60 && !this._okForProp(x, z, 25); k++) { x += (k % 2 ? 1 : -1) * 15; z += 11; }
+      const y = hf.terrainHeight(x, z) - 0.4;
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(14, 7, 10), wall);
+      body.position.y = 3.5;
+      const shape = new THREE.Shape();
+      shape.moveTo(-7.6, 0); shape.lineTo(7.6, 0); shape.lineTo(0, 4.8); shape.lineTo(-7.6, 0);
+      const roof = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 11, bevelEnabled: false }).translate(0, 7, -5.5), roofM);
+      const door = new THREE.Mesh(new THREE.PlaneGeometry(5, 5.4), trim);
+      door.position.set(0, 2.7, 5.02);
+      const x1 = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.25, 0.05), trim);
+      x1.position.set(0, 2.7, 5.06); x1.rotation.z = 0.83;
+      const x2 = x1.clone(); x2.rotation.z = -0.83;
+      g.add(body, roof, door, x1, x2);
+      g.position.set(x, y, z);
+      g.rotation.y = Math.atan2(-x, -z);
+      mergeByMaterial(g, { receiveShadow: true });
+      this.group.add(g);
+      this.colliders.addBox(x, z, 7, 5, -g.rotation.y, y, y + 11, { building: true });
+      this.barns.push({ ...b, x, z, y });
     }
   }
 

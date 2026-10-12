@@ -112,6 +112,32 @@ export const EVENTS = [
   },
 ];
 
+EVENTS.push(
+  {
+    id: 'drift-sierra',
+    name: 'Sierra Drift Club',
+    type: 'drift',
+    discipline: 'Drift',
+    road: 'pass',
+    desc: 'Downhill through the hairpins. Score as many drift points as you can before the bottom.',
+    reward: 20000,
+    xp: 4000,
+    stars: [25000, 60000, 120000],
+  },
+  {
+    id: 'drift-docks',
+    name: 'Harbour Drift Session',
+    type: 'drift',
+    discipline: 'Drift',
+    waypoints: [[650, 300], [950, 300], [950, 600], [650, 600]],
+    closedSprint: true,
+    desc: 'One lap of the Port Solano blocks. Link every corner for a big multiplier.',
+    reward: 14000,
+    xp: 3000,
+    stars: [15000, 35000, 70000],
+  },
+);
+
 // Activities: speed traps, speed zones, drift zones (positions are fractions along a road)
 export const ACTIVITIES = [
   { id: 'trap-runway', type: 'trap', name: 'Airstrip Speed Trap', road: 'runway', frac: 0.6, stars: [180, 230, 280] },

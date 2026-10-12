@@ -134,7 +134,10 @@ export class Route {
     for (let i = 0; i < n; i++) {
       const k = this.curv[i];
       const sg = this.grip[i] < 1 ? this.grip[i] + (0.95 - this.grip[i]) * offroad * 0.8 : 1;
-      v[i] = k > 1e-5 ? Math.min(vmax, Math.sqrt((gripG * sg * 0.95 * 9.81) / k)) : vmax;
+      let vc = k > 1e-5 ? Math.sqrt((gripG * sg * 0.95 * 9.81) / k) : vmax;
+      // keep extra margin in very fast sweepers where a slide is hard to catch
+      if (vc > 50) vc = 50 + (vc - 50) * 0.8;
+      v[i] = Math.min(vmax, vc);
       // crests: stay below lift-off speed
       const kv = this.vcurv[i];
       if (kv > 1e-4) v[i] = Math.min(v[i], Math.sqrt((9.81 * 0.75) / kv));

@@ -1,6 +1,7 @@
 import { el, piBadge } from './HUD.js';
 import { CARS, PAINTS, RIM_COLORS, UPGRADES, carStats, classFor } from '../config/cars.js';
 import { EVENTS, ACTIVITIES } from '../config/events.js';
+import { ACCOLADES } from '../config/accolades.js';
 import { formatNumber, formatTime } from '../core/utils.js';
 import { xpForLevel } from '../core/Save.js';
 import { STATIONS } from '../audio/Audio.js';
@@ -218,6 +219,7 @@ export class Menus {
     tile('Photo Mode', 'Capture the moment', '📷', () => g.enterPhoto());
     tile('Settings', 'Graphics, audio, assists', '⚙', () => this.settings());
     tile('How to Play', 'Controls and tips', '?', () => this.controls());
+    tile('Accolades', `${(p.accolades || []).length}/${ACCOLADES.length} unlocked`, '🏆', () => this.accolades());
     tile('Statistics', 'Your festival career', '📊', () => this.stats());
     tile('Quit to Title', 'Progress is saved', '⏏', () => g.toTitle());
     this.push(node, () => g.resume(), { name: 'pause' });
@@ -513,6 +515,7 @@ export class Menus {
     seg('Traction control', 'TCS', onoff, () => S.assists.tcs, (v) => { S.assists.tcs = v; });
     seg('Stability control', 'STM', onoff, () => S.assists.stm, (v) => { S.assists.stm = v; });
     seg('ABS', 'Anti-lock brakes', onoff, () => S.assists.abs, (v) => { S.assists.abs = v; });
+    seg('Rival ghost', 'Race against a replay of your best run', onoff, () => S.ghost !== false, (v) => { S.ghost = v; });
     seg('Driving line', 'Racing line arrows in events', [['full', 'Full'], ['braking', 'Braking'], ['off', 'Off']], () => S.assists.brakingLine, (v) => { S.assists.brakingLine = v; });
     section('Audio');
     slider('Master volume', '', 0, 1, 0.05, () => S.masterVolume, (v) => { S.masterVolume = v; });
@@ -540,6 +543,23 @@ export class Menus {
     this.push(node, () => this.pop(), { name: 'controls' });
   }
 
+  accolades() {
+    const p = this.game.save.progress;
+    const got = new Set(p.accolades || []);
+    const rows = ACCOLADES.map((a) => {
+      const done = got.has(a.id);
+      let prog = '';
+      if (!done && a.progress) {
+        const [c, t] = a.progress(p, p.stats);
+        prog = `<div class="stat" style="grid-template-columns:1fr 70px"><div class="bar"><div style="width:${Math.min(100, (c / t) * 100)}%"></div></div><span>${formatNumber(Math.min(c, t))}/${formatNumber(t)}</span></div>`;
+      }
+      return `<div class="setrow" style="${done ? 'background:rgba(255,210,26,0.14)' : ''}"><label>${done ? '🏆 ' : ''}${a.name}<small>${a.desc}</small>${prog}</label>
+        <div style="text-align:right;font-weight:700;color:${done ? 'var(--yellow)' : 'var(--muted)'}">${done ? 'UNLOCKED' : `${formatNumber(a.cr)} CR · ${formatNumber(a.xp)} XP`}</div></div>`;
+    }).join('');
+    const node = el('div', 'overlay', `<div class="topbar"><h1>ACCOLADES</h1><div class="wallet"><span>${got.size} / ${ACCOLADES.length}</span></div></div><div class="body"><div class="settings">${rows}</div></div><div class="hint-bar"><span><b>ESC</b>Back</span></div>`);
+    this.push(node, () => this.pop(), { name: 'accolades' });
+  }
+
   stats() {
     const p = this.game.save.progress;
     const s = p.stats;
@@ -558,9 +578,9 @@ export class Menus {
     const rec = g.save.progress.events[ev.id];
     const node = el('div', 'overlay', `<div class="eventcard" style="border-top-color:${info.color}">
       <div class="disc" style="color:${info.color}">${ev.discipline}</div><h2>${ev.name}</h2><div class="desc">${ev.desc}</div>
-      <div class="facts"><div><span>TYPE</span>${ev.type === 'circuit' ? `${ev.laps} Lap${ev.laps > 1 ? 's' : ''}` : ev.type === 'showcase' ? 'Showcase' : ev.type === 'drag' ? 'Drag' : 'Sprint'}</div>
+      <div class="facts"><div><span>TYPE</span>${ev.type === 'circuit' ? `${ev.laps} Lap${ev.laps > 1 ? 's' : ''}` : ev.type === 'showcase' ? 'Showcase' : ev.type === 'drag' ? 'Drag' : ev.type === 'drift' ? 'Drift Score' : 'Sprint'}</div>
       <div><span>LENGTH</span>${(info.length / 1000).toFixed(1)} km</div><div><span>REWARD</span>${formatNumber(ev.reward)}</div>
-      <div><span>DRIVATARS</span>${ev.type === 'showcase' ? 'Jet' : ev.opponents || 7}</div><div><span>DIFFICULTY</span>${g.save.settings.difficulty.toUpperCase()}</div><div><span>BEST</span>${rec ? formatTime(rec.best) : '--'}</div></div>
+      <div><span>${ev.type === 'drift' ? '3 STARS' : 'DRIVATARS'}</span>${ev.type === 'showcase' ? 'Jet' : ev.type === 'drift' ? formatNumber(ev.stars[2]) : ev.opponents || 7}</div><div><span>DIFFICULTY</span>${g.save.settings.difficulty.toUpperCase()}</div><div><span>BEST</span>${rec ? formatTime(rec.best) : '--'}</div></div>
       <div class="actions"><button class="btn primary nav go"><span>Start Event</span></button><button class="btn nav cancel"><span>Cancel</span></button></div></div>`);
     node.querySelector('.go').onclick = () => { this.pop(); g.startEvent(ev.id); };
     node.querySelector('.cancel').onclick = () => { this.pop(); g.resume(true); };

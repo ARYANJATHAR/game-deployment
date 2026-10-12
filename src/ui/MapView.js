@@ -224,6 +224,34 @@ export class MapView {
         ctx.fillText(it.data.ev.name, x, y - r - 6);
       }
     }
+    // barn find rumours (unfound) and found barns
+    const found = new Set(g.save.progress.barns || []);
+    for (const b of g.world.scenery.barns || []) {
+      const [x, y] = this._toScreen(b.x, b.z);
+      if (found.has(b.id)) {
+        ctx.fillStyle = '#8e2a20';
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 1.5;
+        ctx.fillRect(x - 6, y - 6, 12, 12);
+        ctx.strokeRect(x - 6, y - 6, 12, 12);
+      } else {
+        // rumour circle offset from the real location so it must be searched for
+        const ox = Math.sin(b.x) * 60, oz = Math.cos(b.z) * 60;
+        const [rx, ry] = this._toScreen(b.x + ox, b.z + oz);
+        ctx.strokeStyle = 'rgba(255,210,26,0.9)';
+        ctx.fillStyle = 'rgba(255,210,26,0.12)';
+        ctx.setLineDash([6, 4]);
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(rx, ry, 150 * this.zoom, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#ffd21a';
+        ctx.font = '800 16px Rajdhani, sans-serif';
+        ctx.fillText('BARN FIND?', rx, ry + 5);
+      }
+    }
     // waypoint
     if (g.waypoint) {
       const [x, y] = this._toScreen(g.waypoint.x, g.waypoint.z);

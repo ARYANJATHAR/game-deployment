@@ -20,6 +20,14 @@ export const POI = {
   lighthouse: { x: 1840, z: 1420, name: 'Cape Lighthouse' },
 };
 
+// Hidden barn finds: each holds a classic car to restore.
+export const BARNS = [
+  { id: 'barn-fields', x: 520, z: 1180, car: 'mira', paint: '#8a5a2b', hint: 'Golden Fields' },
+  { id: 'barn-forest', x: 1180, z: -980, car: 'kaito', paint: '#3d5a3a', hint: 'Pinewood' },
+  { id: 'barn-hills', x: -560, z: -720, car: 'stallion', paint: '#7a1020', hint: 'Sierra foothills' },
+  { id: 'barn-coast', x: -1420, z: 860, car: 'zenith', paint: '#0b0b0c', hint: 'West coast' },
+];
+
 // type: highway | road | street | dirt | runway
 export const ROAD_DEFS = [
   {

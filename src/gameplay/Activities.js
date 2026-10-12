@@ -8,6 +8,7 @@ const DISC_COLORS = {
   'Dirt Racing': '#c87533',
   'Drag Racing': '#19d3ff',
   Showcase: '#b14bff',
+  Drift: '#9d5cff',
 };
 
 function labelSprite(text, sub, color) {

@@ -187,7 +187,7 @@ export class RoadNetwork {
     this._limitGrade(r);
     // re-impose exact pin heights with a gentle local correction
     for (let it = 0; it < 3; it++) {
-      for (const p of pins) this._applyHeightCorrection(r, p.i, p.y - r.y[p.i], r.type === 'street' ? 30 : 50);
+      for (const p of pins) this._applyHeightCorrection(r, p.i, p.y - r.y[p.i], { street: 30, dirt: 50, road: 90, runway: 90, highway: 150 }[r.type]);
     }
   }
 

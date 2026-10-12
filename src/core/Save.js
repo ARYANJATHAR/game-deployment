@@ -22,6 +22,7 @@ export const DEFAULT_SETTINGS = {
   motionBlur: true,
   traffic: true,
   invertLook: false,
+  ghost: true,
 };
 
 export function defaultProgress() {
@@ -35,8 +36,13 @@ export function defaultProgress() {
     events: {}, // id -> {best, stars, position}
     activities: {}, // id -> {best, stars}
     boards: [], // smashed XP board ids
+    barns: [], // found barn ids
+    accolades: [], // unlocked accolade ids
     discovered: [], // road ids driven
-    stats: { distance: 0, races: 0, wins: 0, drifts: 0, airtime: 0, topSpeed: 0, smashed: 0, crashes: 0 },
+    stats: {
+      distance: 0, races: 0, wins: 0, drifts: 0, airtime: 0, topSpeed: 0, smashed: 0, crashes: 0,
+      nearMisses: 0, bestChain: 0, nightDistance: 0, bestDrift: 0, bestAir: 0,
+    },
     wheelspins: 1,
     intro: false,
     pos: null,

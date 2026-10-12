@@ -631,7 +631,7 @@ export class Scenery {
     const mat = new THREE.MeshStandardMaterial({ color: '#c7c2b5', roughness: 0.8 });
     const stripe = new THREE.MeshStandardMaterial({ color: '#ffcc00', roughness: 0.6 });
     const spots = [
-      { road: 'runway', frac: 0.82, len: 18, h: 3.2 },
+      { road: 'canyon', frac: 0.7, len: 16, h: 3.0 },
       { road: 'canyon', frac: 0.35, len: 14, h: 2.6 },
       { road: 'forest', frac: 0.6, len: 14, h: 2.8 },
       { road: 'central', frac: 0.84, len: 16, h: 2.4 },

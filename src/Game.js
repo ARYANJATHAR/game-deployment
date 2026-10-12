@@ -537,7 +537,7 @@ export class Game {
       this.rig.snap();
       this._clearTraffic();
       this.menus.fade(false);
-      this.hud.toast(e.ev.name.toUpperCase(), 'Drive into the beam to start', 'cyan');
+      this._openEventCard(e);
     }, 380);
   }
 
@@ -1001,7 +1001,7 @@ export class Game {
 
     // event prompt / activation
     if (st === 'freeroam') {
-      const near = this.activities.nearestEvent(pl.pos, 12);
+      const near = this.activities.nearestEvent(pl.pos, 14);
       if (near) {
         this.hud.prompt(near.ev.name, `${near.ev.discipline} · press to start`, 'ENTER', () => this._openEventCard(near));
         if (input.pressed('confirm')) { this._openEventCard(near); return; }

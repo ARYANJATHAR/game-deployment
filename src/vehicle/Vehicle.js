@@ -13,6 +13,14 @@ const _q = new THREE.Quaternion();
 const _m3 = new THREE.Matrix3();
 const _m4 = new THREE.Matrix4();
 const _ground = {};
+const _rel = new THREE.Vector3();
+const _pv = new THREE.Vector3();
+const _F = new THREE.Vector3();
+const _app = new THREE.Vector3();
+const _Ft = new THREE.Vector3();
+const _lt = new THREE.Vector3();
+const _m3t = new THREE.Matrix3();
+const _up0 = new THREE.Vector3(0, 1, 0);
 
 /**
  * Raycast-suspension vehicle with a slip-based tyre model, engine, gearbox
@@ -325,7 +333,10 @@ export class Vehicle {
       // bump stop
       if (w.comp > w.maxComp) fz += (w.comp - w.maxComp) * w.k * 8;
       // surface bumpiness
-      if (w.bump > 0 && this.speed > 3) fz *= 1 + (Math.random() - 0.5) * w.bump * Math.min(1, this.speed / 15);
+      if (w.bump > 0 && this.speed > 3) {
+        const hsh = Math.sin(w.point.x * 3.17 + w.point.z * 5.41) * 43758.5453;
+        fz *= 1 + (hsh - Math.floor(hsh) - 0.5) * w.bump * Math.min(1, this.speed / 15);
+      }
       fz = Math.max(0, fz);
       fz += downforce * (w.front ? 0.45 : 0.55) / 2;
       w.load = fz;
@@ -338,8 +349,8 @@ export class Vehicle {
       wf.addScaledVector(n, -wf.dot(n)).normalize();
       const wr = _v4.copy(wf).cross(n).normalize(); // right = forward x up
 
-      const rel = new THREE.Vector3().copy(w.point).sub(this.pos);
-      const pv = new THREE.Vector3().copy(this.angVel).cross(rel).add(this.vel);
+      const rel = _rel.copy(w.point).sub(this.pos);
+      const pv = _pv.copy(this.angVel).cross(rel).add(this.vel);
       const vLong = pv.dot(wf);
       const vLat = pv.dot(wr);
 
@@ -407,16 +418,12 @@ export class Vehicle {
       else w.spinVel = lerp(w.spinVel, rollVel, 0.5);
 
       // total force at contact (raised toward roll centre to limit roll-over)
-      const F = new THREE.Vector3()
-        .addScaledVector(this.up, fz)
-        .addScaledVector(wf, fLong)
-        .addScaledVector(wr, fLat);
-      force.add(F);
+      const Ft = _Ft.set(0, 0, 0).addScaledVector(wf, fLong).addScaledVector(wr, fLat);
+      force.addScaledVector(this.up, fz).add(Ft);
       // suspension force at the true contact, tyre forces raised toward the roll centre
-      const app = rel.clone().addScaledVector(this.up, this.p.comY * 0.55);
-      const Fs = this.up.clone().multiplyScalar(fz);
-      const Ft = new THREE.Vector3().addScaledVector(wf, fLong).addScaledVector(wr, fLat);
-      torque.add(rel.clone().cross(Fs)).add(app.cross(Ft));
+      const app = _app.copy(rel).addScaledVector(this.up, this.p.comY * 0.55);
+      const Fs = _F.copy(this.up).multiplyScalar(fz);
+      torque.add(app.cross(Ft)).add(rel.cross(Fs));
     }
     this.wheelSpin = maxSpin;
     this.grounded = contacts >= 2;
@@ -447,7 +454,7 @@ export class Vehicle {
     } else {
       // in air: dampen rotation & level out slightly
       this.angVel.multiplyScalar(1 - dt * 0.6);
-      const levelAxis = _v3.copy(this.up).cross(new THREE.Vector3(0, 1, 0));
+      const levelAxis = _v3.copy(this.up).cross(_up0);
       torque.addScaledVector(levelAxis, this.mass * 2.5);
     }
 
@@ -456,7 +463,7 @@ export class Vehicle {
     // world inverse inertia
     _m4.makeRotationFromQuaternion(this.quat);
     _m3.setFromMatrix4(_m4);
-    const localT = torque.clone().applyMatrix3(_m3.clone().transpose());
+    const localT = _lt.copy(torque).applyMatrix3(_m3t.copy(_m3).transpose());
     localT.x *= this.invInertia.x;
     localT.y *= this.invInertia.y;
     localT.z *= this.invInertia.z;

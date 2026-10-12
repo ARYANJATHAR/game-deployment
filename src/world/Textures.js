@@ -94,7 +94,8 @@ export function makeRoadTexture(type, halfWidth) {
     }
     // pebbles
     for (let i = 0; i < 2500; i++) {
-      ctx.fillStyle = `rgba(${150 + r() * 60},${130 + r() * 50},${100 + r() * 40},0.8)`;
+      const v = r();
+      ctx.fillStyle = `rgba(${Math.round(150 + v * 60)},${Math.round(128 + v * 50)},${Math.round(98 + v * 40)},0.8)`;
       ctx.fillRect(r() * W, r() * H, 2 + r() * 3, 2 + r() * 3);
     }
     // grass edges

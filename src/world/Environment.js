@@ -169,8 +169,8 @@ export class Environment {
     const rainFog = new THREE.Color('#8e9aa6');
     const fogC = dayFog.clone().lerp(duskFog, golden * (1 - night) * 0.7).lerp(nightFog, night).lerp(rainFog.clone().lerp(nightFog, night), this.rain * 0.7);
     this.scene.fog.color.copy(fogC);
-    const far = lerp(3400, 900, this.rain * 0.6 + this.fog * 0.7);
-    this.scene.fog.near = lerp(450, 30, this.fog);
+    const far = lerp(3400, 1100, this.rain * 0.55 + this.fog * 0.6);
+    this.scene.fog.near = lerp(450, 90, this.fog);
     this.scene.fog.far = far;
     this.renderer.toneMappingExposure = lerp(0.72, 0.9, night) * lerp(1, 0.9, this.rain);
     this.starMat.opacity = night * (1 - this.rain);

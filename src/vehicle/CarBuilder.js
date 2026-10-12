@@ -522,19 +522,19 @@ export function buildCar(car, opts = {}) {
     const ty = lerp(rBot, rTop, 0.64);
     if (lightStyle === 'slim' || lightStyle === 'modern') {
       const hit = findSurface(0, ty, 1);
-      if (hit) decal(new THREE.PlaneGeometry(W * 0.74, 0.05), tailMat, hit, 0.006);
+      if (hit) decal(new THREE.PlaneGeometry(W * (lightStyle === 'slim' ? 0.55 : 0.68), 0.04), tailMat, hit, 0.006);
     }
     for (const sx of [-1, 1]) {
       const hit = findSurface(sx * bodyHW(rearT) * 0.68, ty, 1);
       if (!hit) continue;
-      const g = lightStyle === 'round' ? new THREE.CircleGeometry(0.1, 18) : new THREE.PlaneGeometry(0.42, 0.15);
+      const g = lightStyle === 'round' ? new THREE.CircleGeometry(0.1, 18) : lightStyle === 'slim' ? new THREE.PlaneGeometry(0.3, 0.07) : new THREE.PlaneGeometry(0.36, 0.13);
       decal(g, tailMat, hit, 0.008);
       if (lightStyle === 'round') {
         const h2 = findSurface(sx * bodyHW(rearT) * 0.45, ty, 1);
         if (h2) decal(new THREE.CircleGeometry(0.1, 18), tailMat, h2, 0.008);
       }
     }
-    const ph = findSurface(0, lerp(rBot, rTop, 0.35), 1);
+    const ph = findSurface(0, lerp(rBot, rTop, lightStyle === 'slim' ? 0.5 : 0.35), 1);
     if (ph) {
       const pm = new THREE.MeshStandardMaterial({ map: makePlateTexture('HR ' + String(car.year).slice(2) + '-' + car.id.slice(0, 3).toUpperCase()), roughness: 0.5 });
       decal(new THREE.PlaneGeometry(0.42, 0.11), pm, ph, 0.012);
@@ -552,7 +552,7 @@ export function buildCar(car, opts = {}) {
     for (const x of xs) {
       const ex = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.25, 12, 1, true).rotateX(Math.PI / 2), M.chrome);
       ex.material = M.chrome;
-      const y = central ? lerp(bodyBottom(0.98), bodyTop(0.98), 0.35) : ride + 0.12;
+      const y = central ? lerp(bodyBottom(0.98), bodyTop(0.98), 0.18) : ride + 0.12;
       ex.position.set(x, y, L / 2 - 0.05);
       body.add(ex);
       const inner = new THREE.Mesh(new THREE.CircleGeometry(0.04, 10), M.under);

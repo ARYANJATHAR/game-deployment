@@ -76,14 +76,14 @@ export class Activities {
       if (!route) continue;
       const i = route.indexAtS(route.closed ? 0 : 20);
       // marker placed at the roadside next to the start
-      const side = route.hw[i] + 7;
+      const side = route.hw[i] + 5;
       const x = route.x[i] + -route.tz[i] * side, z = route.z[i] + route.tx[i] * side;
       const y = this.hf.heightAt(x, z);
       const color = DISC_COLORS[ev.discipline] || '#ff2d87';
       const g = new THREE.Group();
       const beam = new THREE.Mesh(
         new THREE.CylinderGeometry(3.2, 3.2, 90, 20, 1, true),
-        new THREE.MeshBasicMaterial({ color, map: this.beamTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false }),
+        new THREE.MeshBasicMaterial({ color, map: this.beamTex, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false }),
       );
       beam.position.y = 45;
       const ring = new THREE.Mesh(new THREE.TorusGeometry(6, 0.25, 8, 40).rotateX(Math.PI / 2), new THREE.MeshBasicMaterial({ color, fog: false }));
@@ -187,7 +187,7 @@ export class Activities {
     // event marker animation + label visibility
     for (const e of this.events) {
       const d = Math.hypot(e.x - camPos.x, e.z - camPos.z);
-      e.label.visible = d < 260;
+      e.label.visible = d < 260 && d > 30;
       const s = 1 + Math.sin(this.time * 3) * 0.06;
       e.ring.scale.set(s, 1, s);
       e.group.visible = d < 2400;

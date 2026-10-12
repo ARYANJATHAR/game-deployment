@@ -313,7 +313,10 @@ export class Game {
     this.menus.closeAll();
     this.endPreview();
     this._enterWorld(true);
-    this.hud.toast('WELCOME TO HORIZON RUSH', 'Drive into a glowing beam to start your first race', 'cyan', 6000);
+    this.hud.toast('WELCOME TO HORIZON RUSH', 'Follow the blue GPS arrows to your first race', 'cyan', 6000);
+    // guide the player to the opening event
+    const first = this.activities.events.find((e) => e.ev.id === 'festival-circuit');
+    if (first) this.setWaypoint(first.x, first.z);
     const tip = this.touch.enabled ? 'Tap II for the menu · MAP for the world map' : 'Press ESC for the menu · M for the map';
     setTimeout(() => this.hud.toast('TIP', tip, '', 5000), 2500);
   }

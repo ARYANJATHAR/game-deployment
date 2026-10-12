@@ -21,7 +21,7 @@ npm run preview    # serves dist/ on http://localhost:4173
 
 `dist/` is a static site. It uses relative paths, so it can be hosted anywhere (GitHub Pages, Netlify, S3 or any static server). A GitHub Pages workflow is included in `.github/workflows/deploy.yml`.
 
-You need a browser with WebGL 2 (recent Chrome, Edge, Firefox or Safari). A dedicated GPU gives the best frame rate; use **Settings → Quality: Low** on laptops and phones.
+You need a browser with WebGL 2 (recent Chrome, Edge, Firefox or Safari). On first launch the game picks a quality preset for your device. Dynamic resolution then lowers the render resolution when the frame rate drops. You can change both in **Settings**, and turn on **Show FPS** there.
 
 ## Controls
 

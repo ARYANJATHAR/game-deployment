@@ -45,6 +45,7 @@ const PAD = {
 export class Input {
   constructor() {
     this.keys = new Set();
+    this.tapped = new Set(); // keys pressed since the last update (catches quick taps)
     this.prev = {};
     this.cur = {};
     this.axes = { steer: 0, throttle: 0, brake: 0, lookX: 0, lookY: 0 };
@@ -55,6 +56,7 @@ export class Input {
     window.addEventListener('keydown', (e) => {
       if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) return;
       this.keys.add(e.code);
+      if (!e.repeat) this.tapped.add(e.code);
       this.usingPad = false;
       if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'Backspace'].includes(e.code)) e.preventDefault();
       for (const l of this.listeners) l(e.code);
@@ -80,7 +82,7 @@ export class Input {
   _key(action) {
     const ks = KEYMAP[action];
     if (!ks) return false;
-    for (const k of ks) if (this.keys.has(k)) return true;
+    for (const k of ks) if (this.keys.has(k) || this.tapped.has(k)) return true;
     return false;
   }
 
@@ -125,6 +127,7 @@ export class Input {
       if (this.touch.buttons[action]) v = true;
       this.cur[action] = v;
     }
+    this.tapped.clear();
     // stick navigation for menus
     if (pad) {
       const y = pad.axes[1] || 0, x = pad.axes[0] || 0;

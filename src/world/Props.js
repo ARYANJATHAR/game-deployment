@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { rng } from '../core/utils.js';
 import { makeSignTexture } from './Textures.js';
 
-const REGION = 512;
+const REGION = 1024;
 
 function colorGeo(geo, color) {
   const g = geo.index ? geo.toNonIndexed() : geo;
@@ -54,7 +54,7 @@ export function buildPropGeometries() {
     parts.push(colorGeo(new THREE.CylinderGeometry(0.22, 0.38, 3.6, 6).translate(0, 1.8, 0), '#5b4129'));
     const blobs = [[0, 5.0, 0, 2.6], [1.3, 4.2, 0.6, 1.8], [-1.2, 4.4, -0.5, 1.9], [0.2, 6.2, -0.4, 1.7]];
     blobs.forEach(([x, y, z, r], i) => {
-      parts.push(colorGeo(jitter(new THREE.IcosahedronGeometry(r, 1).translate(x, y, z), 0.5, i + 10), i % 2 ? '#3d6b2a' : '#467a31'));
+      parts.push(colorGeo(jitter(new THREE.IcosahedronGeometry(r, 0).translate(x, y, z), 0.45, i + 10), i % 2 ? '#3d6b2a' : '#467a31'));
     });
     G.broadleaf = mergeGeometries(parts);
   }
@@ -80,7 +80,7 @@ export function buildPropGeometries() {
     G.palm = mergeGeometries(parts);
   }
   // Bush
-  G.bush = colorGeo(jitter(new THREE.IcosahedronGeometry(1.1, 1).scale(1.3, 0.8, 1.3).translate(0, 0.6, 0), 0.4, 3), '#3f6a2a');
+  G.bush = colorGeo(jitter(new THREE.IcosahedronGeometry(1.1, 0).scale(1.3, 0.8, 1.3).translate(0, 0.6, 0), 0.35, 3), '#3f6a2a');
   // Rock
   G.rock = colorGeo(jitter(new THREE.DodecahedronGeometry(1.4, 0).scale(1.4, 0.8, 1.1).translate(0, 0.4, 0), 0.6, 4), '#7b7873');
   // Lamp post
@@ -205,7 +205,7 @@ export class Props {
         if (type === 'sign') { geo = this.signGeo; mat = this.signMat; }
         if (type === 'xpboard') { geo = this.xpGeo; mat = this.xpMat; }
         const mesh = new THREE.InstancedMesh(geo, mat, list.length);
-        mesh.castShadow = def.shadow;
+        mesh.castShadow = false;
         mesh.receiveShadow = false;
         let cx = 0, cz = 0;
         list.forEach((it, i) => {
@@ -244,11 +244,55 @@ export class Props {
     }
   }
 
+  /** Shadow-only instanced meshes holding the props near the camera. */
+  _buildShadowProxies() {
+    this.proxies = [];
+    const mat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+    for (const type in this.items) {
+      if (!TYPE_DEFS[type].shadow) continue;
+      const m = new THREE.InstancedMesh(this.geos[type], mat, 700);
+      m.castShadow = true;
+      m.frustumCulled = false;
+      m.count = 0;
+      m.renderOrder = -10;
+      this.group.add(m);
+      this.proxies.push({ type, mesh: m });
+    }
+    this.proxyTimer = 0;
+  }
+
+  _updateShadowProxies(focus) {
+    const R2 = 150 * 150;
+    const dummy = this._dummy || (this._dummy = new THREE.Object3D());
+    for (const p of this.proxies) {
+      let n = 0;
+      for (const it of this.items[p.type]) {
+        if (!it.alive) continue;
+        const dx = it.x - focus.x, dz = it.z - focus.z;
+        if (dx * dx + dz * dz > R2) continue;
+        dummy.position.set(it.x, it.y, it.z);
+        dummy.rotation.set(0, it.rotY, 0);
+        dummy.scale.setScalar(it.scale);
+        dummy.updateMatrix();
+        p.mesh.setMatrixAt(n++, dummy.matrix);
+        if (n >= 700) break;
+      }
+      p.mesh.count = n;
+      p.mesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+
   setNight(amount) {
     this.lampHeadMat.emissiveIntensity = amount * 3;
   }
 
   update(dt, camPos) {
+    if (!this.proxies) this._buildShadowProxies();
+    this.proxyTimer -= dt;
+    if (this.proxyTimer <= 0) {
+      this.proxyTimer = 0.6;
+      this._updateShadowProxies(camPos);
+    }
     // distance culling per region
     for (const m of this.group.children) {
       const c = m.userData.center;

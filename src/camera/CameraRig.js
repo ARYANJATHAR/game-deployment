@@ -65,8 +65,8 @@ export class CameraRig {
     let fov = this.baseFov + clamp((speed - 15) * 0.22, 0, 22);
     if (this.mode <= 1) {
       const far = this.mode === 1;
-      const dist = (far ? 8.5 : 5.6) + v.def.dims.length * 0.35 + clamp(speed * 0.012, 0, 0.8);
-      const height = (far ? 2.9 : 1.75) + v.def.dims.height * 0.35 + this.lookPitch * 3;
+      const dist = (far ? 7.8 : 4.3) + v.def.dims.length * 0.32 + clamp(speed * 0.012, 0, 0.8);
+      const height = (far ? 2.5 : 1.2) + v.def.dims.height * 0.32 + this.lookPitch * 3;
       const desired = new THREE.Vector3(
         carPos.x + Math.sin(yaw) * dist,
         comY + height,
@@ -87,7 +87,7 @@ export class CameraRig {
         this.pos.x = carPos.x + (dx / d) * dist * 1.25;
         this.pos.z = carPos.z + (dz / d) * dist * 1.25;
       }
-      this.target.set(carPos.x - Math.sin(yaw) * 3, comY + 0.9, carPos.z - Math.cos(yaw) * 3);
+      this.target.set(carPos.x - Math.sin(yaw) * 4, comY + 0.75 + v.def.dims.height * 0.2, carPos.z - Math.cos(yaw) * 4);
       cam.position.copy(this.pos);
       cam.lookAt(this.target);
     } else {

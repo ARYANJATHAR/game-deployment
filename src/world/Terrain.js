@@ -3,9 +3,9 @@ import { SURF } from './Heightfield.js';
 import { makeTerrainDetail } from './Textures.js';
 import { Simplex2, clamp, lerp } from '../core/utils.js';
 
-const CHUNK = 64; // cells per chunk side
+const CHUNK = 128; // cells per chunk side
 const LOD_STEPS = [1, 2, 4, 8];
-const LOD_DIST = [420, 900, 1700];
+const LOD_DIST = [380, 1000, 1900];
 
 const SEASON_PALETTES = {
   summer: {

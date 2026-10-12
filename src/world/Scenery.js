@@ -4,6 +4,7 @@ import { rng, Simplex2, smoothstep } from '../core/utils.js';
 import { POI, WORLD } from './WorldConfig.js';
 import { SURF } from './Heightfield.js';
 import { makeFacade, makeBannerTexture, makeWaterNormal } from './Textures.js';
+import { mergeByMaterial } from '../core/merge.js';
 
 /** Places vegetation, buildings, landmarks, water and collectibles. */
 export class Scenery {
@@ -97,7 +98,7 @@ export class Scenery {
         if (s === SURF.SAND) dens = 0.25;
         if (h > 160) dens *= 0.3;
         if (slope > 0.9) dens *= 0.3;
-        if (r() > dens * 0.42) continue;
+        if (r() > dens * 0.36) continue;
         let type;
         if (s === SURF.SAND) {
           if (h > 4) continue;
@@ -450,9 +451,6 @@ export class Scenery {
       flag.material.side = THREE.DoubleSide;
       flag.position.set(px + 1.5, 10.8, pz);
       g.add(pole, flag);
-      this.animated.push((t) => {
-        flag.rotation.y = Math.sin(t * 2 + k) * 0.3;
-      });
       this.colliders.addCircle(f.x + px, f.z + pz, 0.3, y, y + 12);
     }
     // ferris wheel
@@ -474,28 +472,24 @@ export class Scenery {
     wsupport.position.set(-90, 12, 40);
     g.add(wheel, wsupport);
     this.colliders.addCircle(f.x - 90, f.z + 40, 3, y, y + 40);
-    this.animated.push((t) => {
-      wheel.rotation.z = t * 0.08;
-      wheel.children.forEach((c, i) => {
-        if (c.geometry.type === 'BoxGeometry' && c.geometry.parameters.width === 2.4) c.rotation.z = -t * 0.08;
-        void i;
-      });
-    });
+    mergeByMaterial(wheel);
+    this.animated.push((t) => { wheel.rotation.z = t * 0.08; });
     // showroom spotlights (beams)
     const beamMat = new THREE.MeshBasicMaterial({ color: '#9fe8ff', transparent: true, opacity: 0.0, depthWrite: false, blending: THREE.AdditiveBlending });
     this.festivalBeams = beamMat;
+    const beams = new THREE.Group();
+    g.add(beams);
     for (let k = 0; k < 4; k++) {
       const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 4, 160, 12, 1, true), beamMat);
       beam.position.set(-20 + k * 14, 80, -100);
-      g.add(beam);
+      beams.add(beam);
       this.animated.push((t) => {
         beam.rotation.z = Math.sin(t * 0.5 + k) * 0.35;
         beam.rotation.x = Math.cos(t * 0.4 + k * 2) * 0.25;
       });
     }
-    g.traverse((o) => {
-      if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }
-    });
+    mergeByMaterial(g, { skip: new Set([wheel, beams]), receiveShadow: true });
+    beams.traverse((o) => { o.castShadow = false; });
     this.group.add(g);
     // parked showcase cars spots are added by the game
     this.festivalGroup = g;
@@ -533,7 +527,8 @@ export class Scenery {
       t.add(tower, nac, rotor);
       t.position.set(x, y, z);
       t.rotation.y = 0.6;
-      t.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+      mergeByMaterial(rotor);
+      mergeByMaterial(t, { skip: new Set([rotor]) });
       this.group.add(t);
       this.colliders.addCircle(x, z, 1.8, y, y + 60);
       const sp = 0.6 + r() * 0.4, ph = r() * 6;
@@ -572,7 +567,10 @@ export class Scenery {
     this.lighthouseBeam = beamMat;
     this.animated.push((t) => { beam.rotation.y = t * 0.6; });
     g.position.set(x, y, z);
-    g.traverse((o) => { if (o.isMesh && o !== beam) o.castShadow = true; });
+    const beamPivot = beam;
+    g.remove(beam);
+    mergeByMaterial(g);
+    g.add(beamPivot);
     this.group.add(g);
     this.colliders.addCircle(x, z, 3.2, y, y + 30, { building: true });
   }

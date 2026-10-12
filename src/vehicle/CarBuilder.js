@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp, lerp, smoothstep } from '../core/utils.js';
 import { makePlateTexture, makeCarbonTexture, makeTireTexture } from '../world/Textures.js';
+import { mergeByMaterial } from '../core/merge.js';
 
 // Body style profiles. t = 0 at the nose, 1 at the tail.
 // top: fraction of total height, bottom: extra height above ride height (fraction of height),
@@ -244,6 +245,7 @@ export function buildCar(car, opts = {}) {
     }
   }
   // caps
+  const capStart = idx.length;
   for (const [k, flip] of [[0, true], [STN - 1, false]]) {
     const ring = ringPts[k];
     let cx = 0, cy = 0;
@@ -265,27 +267,39 @@ export function buildCar(car, opts = {}) {
   bodyGeo.setIndex(idx);
   bodyGeo.computeVertexNormals();
   fixWinding(bodyGeo, new THREE.Vector3(0, (ride + H * 0.6) / 2, 0));
+  // caps must face forward (nose) and backward (tail)
+  {
+    const ia = bodyGeo.index.array;
+    const pa = bodyGeo.attributes.position;
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+    const half = (ia.length - capStart) / 2;
+    for (let t = capStart; t < ia.length; t += 3) {
+      a.fromBufferAttribute(pa, ia[t]); b.fromBufferAttribute(pa, ia[t + 1]); c.fromBufferAttribute(pa, ia[t + 2]);
+      const nz = b.sub(a).cross(c.sub(a)).z;
+      const front = t - capStart < half;
+      if ((front && nz > 0) || (!front && nz < 0)) {
+        const tmp = ia[t + 1];
+        ia[t + 1] = ia[t + 2];
+        ia[t + 2] = tmp;
+      }
+    }
+    bodyGeo.computeVertexNormals();
+  }
   const bodyMesh = new THREE.Mesh(bodyGeo, paint);
   bodyMesh.castShadow = true;
   bodyMesh.receiveShadow = true;
   body.add(bodyMesh);
 
-  const surf = { pos: bodyGeo.attributes.position, nrm: bodyGeo.attributes.normal };
+  bodyMesh.updateMatrixWorld(true);
+  const ray = new THREE.Raycaster();
   const findSurface = (tx, ty, facing) => {
-    // nearest body vertex in (x, y) whose normal faces `facing` (z sign)
-    let best = null, bd = Infinity;
-    for (let i = 0; i < STN * RING; i++) {
-      const nz = surf.nrm.getZ(i);
-      if (nz * facing < 0.35) continue;
-      const x = surf.pos.getX(i), y = surf.pos.getY(i);
-      const d = (x - tx) ** 2 + (y - ty) ** 2;
-      if (d < bd) { bd = d; best = i; }
-    }
-    if (best === null) return null;
-    return {
-      p: new THREE.Vector3(surf.pos.getX(best), surf.pos.getY(best), surf.pos.getZ(best)),
-      n: new THREE.Vector3(surf.nrm.getX(best), surf.nrm.getY(best), surf.nrm.getZ(best)).normalize(),
-    };
+    // cast toward the body from in front (facing -1) or behind (facing +1)
+    ray.set(new THREE.Vector3(tx, ty, facing * L), new THREE.Vector3(0, 0, -facing));
+    const hits = ray.intersectObject(bodyMesh, false);
+    if (!hits.length) return null;
+    const h = hits[0];
+    const n = h.face.normal.clone().transformDirection(bodyMesh.matrixWorld).normalize();
+    return { p: h.point.clone(), n };
   };
   const decal = (geo, mat, hit, out = 0.004) => {
     const m = new THREE.Mesh(geo, mat);
@@ -391,10 +405,10 @@ export function buildCar(car, opts = {}) {
     for (const sx of [-1, 1]) {
       const t = C.cs + 0.04;
       const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.11, 0.13), paint);
-      mirror.position.set(sx * (bodyHW(t) * C.inset + 0.1), bodyTop(t) + 0.13, zOf(t));
+      mirror.position.set(sx * (bodyHW(t) * C.inset + 0.06), bodyTop(t) + 0.09, zOf(t));
       body.add(mirror);
       const stalk = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.04, 0.05), M.trim);
-      stalk.position.set(sx * (bodyHW(t) * C.inset + 0.02), bodyTop(t) + 0.1, zOf(t));
+      stalk.position.set(sx * (bodyHW(t) * C.inset - 0.01), bodyTop(t) + 0.06, zOf(t));
       body.add(stalk);
     }
     if (S.scoop) {
@@ -505,16 +519,20 @@ export function buildCar(car, opts = {}) {
   {
     const rearT = 0.975;
     const rTop = bodyTop(rearT), rBot = bodyBottom(rearT);
-    const ty = lerp(rBot, rTop, 0.72);
+    const ty = lerp(rBot, rTop, 0.64);
     if (lightStyle === 'slim' || lightStyle === 'modern') {
       const hit = findSurface(0, ty, 1);
-      if (hit) decal(new THREE.PlaneGeometry(W * 0.82, 0.06), tailMat, hit, 0.006);
+      if (hit) decal(new THREE.PlaneGeometry(W * 0.74, 0.05), tailMat, hit, 0.006);
     }
     for (const sx of [-1, 1]) {
-      const hit = findSurface(sx * bodyHW(rearT) * 0.7, ty, 1);
+      const hit = findSurface(sx * bodyHW(rearT) * 0.68, ty, 1);
       if (!hit) continue;
-      const g = lightStyle === 'round' ? new THREE.CircleGeometry(0.08, 18) : new THREE.PlaneGeometry(0.34, 0.12);
+      const g = lightStyle === 'round' ? new THREE.CircleGeometry(0.1, 18) : new THREE.PlaneGeometry(0.42, 0.15);
       decal(g, tailMat, hit, 0.008);
+      if (lightStyle === 'round') {
+        const h2 = findSurface(sx * bodyHW(rearT) * 0.45, ty, 1);
+        if (h2) decal(new THREE.CircleGeometry(0.1, 18), tailMat, h2, 0.008);
+      }
     }
     const ph = findSurface(0, lerp(rBot, rTop, 0.35), 1);
     if (ph) {
@@ -522,8 +540,8 @@ export function buildCar(car, opts = {}) {
       decal(new THREE.PlaneGeometry(0.42, 0.11), pm, ph, 0.012);
     }
     // diffuser
-    const dif = new THREE.Mesh(new THREE.BoxGeometry(W * 0.7, 0.12, 0.3), M.carbon);
-    dif.position.set(0, ride + 0.08, L / 2 - 0.2);
+    const dif = new THREE.Mesh(new THREE.BoxGeometry(W * 0.55, 0.06, 0.18), M.carbon);
+    dif.position.set(0, ride + 0.04, L / 2 - 0.15);
     body.add(dif);
   }
   // exhausts
@@ -583,8 +601,9 @@ export function buildCar(car, opts = {}) {
 
   // underbody fill (prevents seeing through the arch cut-outs)
   {
-    const ub = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.3, innerX * 2 - 0.12), Math.max(0.2, H * 0.32), L * 0.9), M.under);
-    ub.position.set(0, ride + Math.max(0.2, H * 0.32) / 2, 0);
+    const ubH = Math.max(0.16, H * 0.22);
+    const ub = new THREE.Mesh(new THREE.BoxGeometry(Math.max(0.3, innerX * 2 - 0.12), ubH, (axleR - axleF) + R * 1.2), M.under);
+    ub.position.set(0, ride + 0.02 + ubH / 2, (axleF + axleR) / 2);
     body.add(ub);
     // inner arch liners
     for (const az of [axleF, axleR]) {
@@ -596,9 +615,7 @@ export function buildCar(car, opts = {}) {
     }
   }
 
-  body.traverse((o) => {
-    if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; }
-  });
+  mergeByMaterial(body);
 
   // ---------- wheels ----------
   const wheels = [];

@@ -20,8 +20,8 @@ export class Environment {
     this.sky = new Sky();
     this.sky.scale.setScalar(40000);
     const u = this.sky.material.uniforms;
-    u.turbidity.value = 6;
-    u.rayleigh.value = 1.6;
+    u.turbidity.value = 3;
+    u.rayleigh.value = 2;
     u.mieCoefficient.value = 0.005;
     u.mieDirectionalG.value = 0.8;
     scene.add(this.sky);
@@ -130,8 +130,8 @@ export class Environment {
 
     const u = this.sky.material.uniforms;
     u.sunPosition.value.copy(this.sunDir);
-    u.rayleigh.value = lerp(1.5, 0.35, night) + this.rain * 1.5;
-    u.turbidity.value = 5 + this.rain * 12;
+    u.rayleigh.value = lerp(2.2, 0.35, night) + this.rain * 1.5;
+    u.turbidity.value = 2.6 + this.rain * 12 + this.fog * 6;
     const eu = this.envSky.material.uniforms;
     for (const k of ['turbidity', 'rayleigh', 'mieCoefficient', 'mieDirectionalG']) eu[k].value = u[k].value;
     eu.sunPosition.value.copy(this.sunDir);
@@ -163,16 +163,16 @@ export class Environment {
     this.hemi.groundColor.set(night > 0.5 ? '#151515' : '#5b5140');
 
     // fog colour approximates horizon colour
-    const dayFog = new THREE.Color('#c6d8ea');
+    const dayFog = new THREE.Color('#b9d0e6');
     const duskFog = new THREE.Color('#e3a77c');
     const nightFog = new THREE.Color('#0d1424');
     const rainFog = new THREE.Color('#8e9aa6');
     const fogC = dayFog.clone().lerp(duskFog, golden * (1 - night) * 0.7).lerp(nightFog, night).lerp(rainFog.clone().lerp(nightFog, night), this.rain * 0.7);
     this.scene.fog.color.copy(fogC);
-    const far = lerp(2600, 900, this.rain * 0.6 + this.fog * 0.7);
-    this.scene.fog.near = lerp(250, 30, this.fog);
+    const far = lerp(3400, 900, this.rain * 0.6 + this.fog * 0.7);
+    this.scene.fog.near = lerp(450, 30, this.fog);
     this.scene.fog.far = far;
-    this.renderer.toneMappingExposure = lerp(0.55, 0.85, night) * lerp(1, 0.9, this.rain);
+    this.renderer.toneMappingExposure = lerp(0.72, 0.9, night) * lerp(1, 0.9, this.rain);
     this.starMat.opacity = night * (1 - this.rain);
     this.stars.position.copy(focus);
 

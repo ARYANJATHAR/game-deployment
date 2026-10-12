@@ -184,11 +184,14 @@ export class Vehicle {
     let maxSteer = lock / (1 + (v * v) / 1100);
     let target = c.steer * maxSteer;
     if (this.assists.steerAssist && this.grounded && v > 5) {
-      // counter-steer help: align front wheels toward velocity when sliding
+      // steering is relative to the direction of travel: when sliding, the
+      // wheels are pointed toward the velocity so counter-steer comes naturally
       const latV = this.vel.dot(this.right);
       const slide = Math.atan2(latV, Math.max(2, v));
-      target += clamp(slide * 0.55, -lock * 0.6, lock * 0.6) * (1 - Math.abs(c.steer) * 0.5);
+      target += clamp(slide * 0.85, -lock * 0.8, lock * 0.8) * (1 - Math.abs(c.steer) * 0.35);
     }
+    if (c.steerAngle !== undefined) target = c.steerAngle; // direct wheel angle (AI)
+    target = clamp(target, -lock, lock);
     const steerRate = 3.2 + (c.steer === 0 ? 2 : 0);
     this.steerAngle += clamp(target - this.steerAngle, -steerRate * dt, steerRate * dt);
 
@@ -225,7 +228,7 @@ export class Vehicle {
     }
     targetRpm = clamp(targetRpm, p.idle, p.redline + 200);
     this.rpm = lerp(this.rpm, targetRpm, 1 - Math.exp(-dt * (this.grounded ? 18 : 6)));
-    let engineTorque = this.torqueAt(this.rpm) * throttle;
+    let engineTorque = this.torqueAt(this.rpm) * throttle * (this.aiPowerScale || 1);
     if (this.rpm >= p.redline) {
       engineTorque = 0; // limiter
       this.limiter = true;
@@ -369,11 +372,15 @@ export class Vehicle {
         if (w.driven && Math.abs(drive) > fMax && !(tcsOn && !locked)) spin = (Math.abs(drive) - fMax) / Math.max(1, fMax);
         fLong = Math.sign(fLong) * fMax * (locked || spin > 0 ? 0.88 : 1);
       }
-      if (tcsOn && w.driven && Math.abs(drive) > fMax) {
-        fLong = Math.sign(drive) * fMax * 0.98;
+      if (tcsOn && w.driven) {
+        // traction control keeps longitudinal use below the limit, more so when sliding
+        const lim = fMax * (Math.abs(vLat) > 1.2 ? 0.6 : 0.88);
+        if (Math.abs(drive) > lim && Math.sign(drive) === Math.sign(fLong)) fLong = Math.sign(drive) * Math.min(Math.abs(fLong), lim);
       }
       // lateral
-      const latCap = Math.sqrt(Math.max(0, fMax * fMax - fLong * fLong)) * (spin > 0 ? 0.55 : 1) * (locked ? 0.35 : 1);
+      // friction ellipse: tyres keep some lateral grip even at full drive/brake
+      const lr = fLong / Math.max(1, fMax);
+      const latCap = fMax * Math.sqrt(Math.max(0, 1 - 0.72 * lr * lr)) * (spin > 0 ? 0.7 : 1) * (locked ? 0.35 : 1);
       const alpha = Math.atan2(vLat, Math.abs(vLong) + 1.5);
       const B = 9.5, C = 1.55;
       const shape = Math.sin(C * Math.atan(B * Math.abs(alpha)));
@@ -426,8 +433,11 @@ export class Vehicle {
     const yawRate = this.angVel.dot(this.up);
     if (this.grounded) {
       if (this.assists.stm && v > 8) {
-        const desired = (fwdSpeed * Math.tan(this.steerAngle)) / this.def.dims.wheelbase;
-        const excess = yawRate - desired;
+        const desired = -(fwdSpeed * Math.tan(this.steerAngle)) / this.def.dims.wheelbase;
+        // only counteract yaw beyond what the driver asked for (never add yaw)
+        let excess;
+        if (Math.sign(yawRate) !== Math.sign(desired)) excess = yawRate;
+        else excess = Math.sign(yawRate) * Math.max(0, Math.abs(yawRate) - Math.abs(desired));
         const latV = this.vel.dot(this.right);
         const sliding = Math.abs(Math.atan2(latV, v));
         if (sliding > 0.12 && c.handbrake < 0.1) torque.addScaledVector(this.up, -excess * this.mass * 2.2);

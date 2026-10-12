@@ -101,7 +101,7 @@ export function buildRoads(hf, scene, colliders) {
   return { group, materials };
 }
 
-function buildRails(hf, colliders) {
+export function buildRails(hf, colliders) {
   const positions = [];
   const normals = [];
   const push = (p, n) => {

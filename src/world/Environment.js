@@ -130,9 +130,9 @@ export class Environment {
           float shade = clamp(1.0 - (n2 - n) * 3.0, 0.45, 1.2);
           vec3 base = mix(vec3(0.55, 0.6, 0.7), vec3(1.0), shade);
           vec3 col = base * mix(sunColor, vec3(1.0), 0.35) * brightness;
-          col *= mix(1.0, 0.04, night);
+          col *= mix(1.0, 0.06, night);
           float horizon = smoothstep(0.0, 0.25, d.y);
-          gl_FragColor = vec4(col, c * horizon * 0.95);
+          gl_FragColor = vec4(col, c * horizon * 0.95 * mix(1.0, 0.45, night));
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
         }`,
@@ -191,8 +191,11 @@ export class Environment {
 
     const u = this.sky.material.uniforms;
     u.sunPosition.value.copy(this.sunDir);
-    u.rayleigh.value = lerp(3.0, 0.35, night) + this.rain * 1.5;
-    u.turbidity.value = 2.6 + this.rain * 12 + this.fog * 6;
+    // low rayleigh keeps the midday sky a deep blue; it rises toward sunset for the orange horizon
+    const goldenSky = 1 - clamp(this.sunDir.y * 2.2, 0, 1);
+    u.rayleigh.value = lerp(lerp(0.65, 2.6, goldenSky * goldenSky), 0.35, night) + this.rain * 1.5;
+    u.turbidity.value = 2 + this.rain * 12 + this.fog * 6;
+    u.mieCoefficient.value = 0.002 + this.rain * 0.004;
     const eu = this.envSky.material.uniforms;
     for (const k of ['turbidity', 'rayleigh', 'mieCoefficient', 'mieDirectionalG']) eu[k].value = u[k].value;
     eu.sunPosition.value.copy(this.sunDir);
@@ -204,7 +207,7 @@ export class Environment {
     const overcast = 1 - this.rain * 0.65 - this.fog * 0.4;
     if (isDay) {
       this.sun.color.copy(sunColor);
-      this.sun.intensity = 3.2 * sunUp * overcast;
+      this.sun.intensity = 3.9 * sunUp * overcast;
       this.sun.position.copy(focus).addScaledVector(this.sunDir, 300);
     } else {
       // moon light
@@ -219,7 +222,8 @@ export class Environment {
     // snap shadow camera to texel grid to reduce shimmering
     this.sun.target.updateMatrixWorld();
 
-    this.hemi.intensity = lerp(1.15, 0.22, night) * lerp(1, 0.75, this.rain);
+    // keep ambient well below the sun so shading and shadows have contrast (the env map adds sky light too)
+    this.hemi.intensity = lerp(0.6, 0.28, night) * lerp(1, 1.4, this.rain);
     this.hemi.color.set(night > 0.5 ? '#4a5a80' : '#bcd7ff');
     this.hemi.groundColor.set(night > 0.5 ? '#151515' : '#5b5140');
 

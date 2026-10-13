@@ -40,17 +40,32 @@ export class Scenery {
 
   _water() {
     const normal = makeWaterNormal();
-    normal.repeat.set(220, 220);
+    normal.repeat.set(160, 160);
     const geo = new THREE.PlaneGeometry(WORLD.size * 3, WORLD.size * 3, 1, 1).rotateX(-Math.PI / 2);
     this.waterMat = new THREE.MeshStandardMaterial({
-      color: '#1d6a8a',
-      roughness: 0.08,
-      metalness: 0.1,
+      color: '#0f4d68',
+      roughness: 0.14,
+      metalness: 0.05,
       normalMap: normal,
-      normalScale: new THREE.Vector2(0.35, 0.35),
+      normalScale: new THREE.Vector2(0.5, 0.5),
       transparent: true,
-      opacity: 0.86,
+      opacity: 0.88,
     });
+    const waterTime = { value: 0 };
+    this.waterMat.onBeforeCompile = (shader) => {
+      shader.uniforms.waterTime = waterTime;
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <normalmap_pars_fragment>', '#include <normalmap_pars_fragment>\nuniform float waterTime;')
+        .replace('#include <normal_fragment_maps>', THREE.ShaderChunk.normal_fragment_maps.replace(
+          'vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;',
+          `// two wave layers at different scales and directions hide the tiling
+          vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;
+          vec3 mapN2 = texture2D( normalMap, vNormalMapUv * 0.31 + vec2( -waterTime * 0.0021, waterTime * 0.0013 ) ).xyz * 2.0 - 1.0;
+          mapN = vec3( mapN.xy * 0.55 + mapN2.xy * 0.75, 1.0 );
+          // flatten the waves with distance so far water doesn't sparkle and alias
+          mapN.xy *= 1.0 / ( 1.0 + length( vViewPosition ) / 180.0 );`,
+        ));
+    };
     const water = new THREE.Mesh(geo, this.waterMat);
     water.position.y = WORLD.seaLevel;
     water.receiveShadow = true;
@@ -59,6 +74,7 @@ export class Scenery {
     this.scene.add(water);
     this.animated.push((t) => {
       normal.offset.set(t * 0.004, t * 0.0025);
+      waterTime.value = t;
     });
   }
 

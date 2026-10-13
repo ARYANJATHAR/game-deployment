@@ -16,11 +16,12 @@ void main() {
 }`;
 const FRAG = `
 uniform sampler2D map;
+uniform vec3 light;
 varying vec4 vColor;
 #include <fog_pars_fragment>
 void main() {
   vec4 t = texture2D(map, gl_PointCoord);
-  gl_FragColor = vec4(vColor.rgb, vColor.a * t.a);
+  gl_FragColor = vec4(vColor.rgb * light, vColor.a * t.a);
   if (gl_FragColor.a < 0.004) discard;
   #include <fog_fragment>
 }`;
@@ -46,7 +47,7 @@ export class ParticleSystem {
     g.setAttribute('size', new THREE.BufferAttribute(this.size, 1).setUsage(THREE.DynamicDrawUsage));
     this.geo = g;
     this.mat = new THREE.ShaderMaterial({
-      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { map: { value: texture || makeSmokeTexture() }, scale: { value: 600 } }]),
+      uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { map: { value: texture || makeSmokeTexture() }, scale: { value: 600 }, light: { value: new THREE.Color(1, 1, 1) } }]),
       vertexShader: VERT,
       fragmentShader: FRAG,
       transparent: true,
@@ -62,6 +63,11 @@ export class ParticleSystem {
 
   setScale(h) {
     this.mat.uniforms.scale.value = h;
+  }
+
+  /** Tints particles by the scene lighting so smoke isn't glowing white at night. */
+  setLight(r, g, b) {
+    this.mat.uniforms.light.value.setRGB(r, g, b);
   }
 
   emit(x, y, z, vx, vy, vz, size, grow, life, r, g, b, a, drag = 1.5, grav = 0) {

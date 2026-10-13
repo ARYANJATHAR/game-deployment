@@ -4,6 +4,13 @@ import { SURFACE_PROPS, SURF } from '../world/Heightfield.js';
 import { makeGlowTexture } from '../world/Textures.js';
 
 const _p = new THREE.Vector3();
+// tyre smoke and dust amount: [emission rate, opacity, growth, lifetime]
+const SMOKE_LEVELS = {
+  off: [0, 0, 0, 0],
+  low: [0.3, 0.55, 0.55, 0.65],
+  medium: [0.55, 0.7, 0.7, 0.8],
+  high: [1, 1, 1, 1],
+};
 const _r = new THREE.Vector3();
 
 /** Drives smoke, dust, sparks, flames and skid marks for all vehicles. */
@@ -14,6 +21,7 @@ export class VehicleFX {
     this.sparks = new ParticleSystem(scene, 600, true, makeGlowTexture());
     this.skids = new SkidMarks(scene, 7000);
     this.quality = 1;
+    this.smokeLevel = 'medium';
     // player headlights
     this.headlights = [];
     for (let i = 0; i < 2; i++) {
@@ -38,6 +46,11 @@ export class VehicleFX {
   update(dt, vehicles, player, env, camera) {
     this.smoke.setScale(window.innerHeight * 0.9);
     this.sparks.setScale(window.innerHeight * 0.6);
+    const [sRate, sAlpha, sGrow, sLife] = SMOKE_LEVELS[this.smokeLevel] || SMOKE_LEVELS.medium;
+    // smoke takes the colour of the ambient light: grey in daylight, dim at night
+    const day = 1 - env.nightAmount * 0.82;
+    const wet = 1 - env.rain * 0.2;
+    this.smoke.setLight(day * wet * 0.97, day * wet * 0.98, Math.min(1, day * wet + env.nightAmount * 0.08));
     for (const v of vehicles) {
       const dist = camera.position.distanceTo(v.pos);
       if (dist > 220) continue;
@@ -60,23 +73,23 @@ export class VehicleFX {
         // particles
         const rate = this.quality * near;
         if (isHard) {
-          if (w.skid > 0.25 && Math.random() < w.skid * rate * 0.9) {
-            const g = 0.85 + Math.random() * 0.1;
+          if (w.skid > 0.3 && Math.random() < w.skid * rate * sRate * 0.9) {
+            const g = 0.8 + Math.random() * 0.1;
             this.smoke.emit(
               w.point.x + (Math.random() - 0.5) * 0.3, w.point.y + 0.25, w.point.z + (Math.random() - 0.5) * 0.3,
-              v.vel.x * 0.15 + (Math.random() - 0.5) * 1.5, 0.6 + Math.random(), v.vel.z * 0.15 + (Math.random() - 0.5) * 1.5,
-              1.2, 2.6 + w.skid * 2.5, 1.8 + Math.random() * 1.4, g, g, g, 0.32 * w.skid + 0.08, 1.2, -0.3,
+              v.vel.x * 0.15 + (Math.random() - 0.5) * 1.5, 0.5 + Math.random() * 0.8, v.vel.z * 0.15 + (Math.random() - 0.5) * 1.5,
+              1.0, (2.2 + w.skid * 2) * sGrow, (1.6 + Math.random() * 1.2) * sLife, g, g, g, (0.28 * w.skid + 0.06) * sAlpha, 1.3, -0.25,
             );
           }
         } else if (sp > 3) {
           const props = SURFACE_PROPS[surf] || SURFACE_PROPS[0];
           const c = props.dust;
           const amt = Math.min(1, sp / 25) * (0.35 + w.skid);
-          if (Math.random() < amt * rate) {
+          if (Math.random() < amt * rate * sRate) {
             this.smoke.emit(
               w.point.x, w.point.y + 0.2, w.point.z,
               -v.vel.x * 0.1 + (Math.random() - 0.5) * 2, 0.5 + Math.random() * 1.2, -v.vel.z * 0.1 + (Math.random() - 0.5) * 2,
-              1.0, 2.2 + amt * 2, 1.4 + Math.random(), c[0], c[1], c[2], 0.35 * amt + 0.1, 1.5, 0.2,
+              0.9, (2 + amt * 1.8) * sGrow, (1.3 + Math.random()) * sLife, c[0], c[1], c[2], (0.32 * amt + 0.08) * sAlpha, 1.5, 0.2,
             );
           }
         }

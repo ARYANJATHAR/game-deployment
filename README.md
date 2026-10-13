@@ -104,6 +104,8 @@ Touch devices get on-screen steering, pedals, handbrake and rewind buttons.
 - A day/night cycle with a physical sky, animated procedural clouds, stars, headlights, lit windows and street lamps.
 - Dynamic weather: clear, rain (wet roads with reduced grip), fog and storms.
 - Four seasons that recolour the island: summer, autumn, winter and spring.
+- Rendering: multisampled anti-aliasing, HDR bloom, a time-of-day colour grade with vignette, a sun lens flare hidden by terrain, layered ocean waves, and baked slope and crease shading on the terrain. Medium and High quality use the full post-processing chain; Low renders directly for speed.
+- Tyre smoke and dust can be set to Off, Low, Medium (default) or High in **Settings**.
 
 **Driving**
 - 10 cars, from a hot hatch to a Le Mans prototype. Each has its own procedurally modelled body, wheels, lights and spoilers, plus its own drivetrain (FWD, RWD or AWD), torque curve, gearbox, weight distribution, downforce and off-road ability.

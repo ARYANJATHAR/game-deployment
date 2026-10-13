@@ -11,12 +11,12 @@ const SEASON_PALETTES = {
   summer: {
     grass: [0.30, 0.46, 0.17], grass2: [0.42, 0.52, 0.2], forest: [0.2, 0.34, 0.12],
     field1: [0.82, 0.68, 0.32], field2: [0.5, 0.58, 0.22], sand: [0.86, 0.78, 0.58],
-    rock: [0.46, 0.44, 0.42], snow: [0.94, 0.95, 0.98], dirt: [0.5, 0.38, 0.25], concrete: [0.58, 0.58, 0.6],
+    rock: [0.42, 0.4, 0.37], snow: [0.94, 0.95, 0.98], dirt: [0.5, 0.38, 0.25], concrete: [0.58, 0.58, 0.6],
   },
   autumn: {
     grass: [0.46, 0.44, 0.18], grass2: [0.58, 0.45, 0.2], forest: [0.4, 0.3, 0.14],
     field1: [0.72, 0.52, 0.25], field2: [0.55, 0.42, 0.2], sand: [0.84, 0.76, 0.56],
-    rock: [0.46, 0.43, 0.4], snow: [0.94, 0.95, 0.98], dirt: [0.45, 0.33, 0.22], concrete: [0.58, 0.58, 0.6],
+    rock: [0.43, 0.4, 0.36], snow: [0.94, 0.95, 0.98], dirt: [0.45, 0.33, 0.22], concrete: [0.58, 0.58, 0.6],
   },
   winter: {
     grass: [0.9, 0.92, 0.96], grass2: [0.84, 0.87, 0.93], forest: [0.82, 0.85, 0.9],
@@ -26,7 +26,7 @@ const SEASON_PALETTES = {
   spring: {
     grass: [0.33, 0.55, 0.2], grass2: [0.45, 0.62, 0.25], forest: [0.22, 0.42, 0.16],
     field1: [0.6, 0.66, 0.3], field2: [0.38, 0.6, 0.22], sand: [0.86, 0.78, 0.58],
-    rock: [0.46, 0.44, 0.42], snow: [0.94, 0.95, 0.98], dirt: [0.48, 0.36, 0.24], concrete: [0.58, 0.58, 0.6],
+    rock: [0.42, 0.4, 0.37], snow: [0.94, 0.95, 0.98], dirt: [0.48, 0.36, 0.24], concrete: [0.58, 0.58, 0.6],
   },
 };
 
@@ -134,6 +134,17 @@ export class Terrain {
         }
         // underwater darkening
         let k = 0.88 + v2 * 0.2;
+        // baked shading: darken creases and steep faces, lighten ridges, band the rock into strata
+        const iL = Math.max(0, i - 2), iR = Math.min(V - 1, i + 2), jU = Math.max(0, j - 2), jD = Math.min(V - 1, j + 2);
+        const lap = (hf.heights[j * V + iL] + hf.heights[j * V + iR] + hf.heights[jU * V + i] + hf.heights[jD * V + i] - 4 * h) / (4 * c * c);
+        k *= clamp(1 - lap * 9, 0.72, 1.08);
+        const ny = this.normals[idx * 3 + 1] / 127;
+        if (s === SURF.ROCK || s === SURF.SNOW) {
+          k *= lerp(0.7, 1, clamp((ny - 0.55) / 0.4, 0, 1));
+          if (s === SURF.ROCK) k *= 0.92 + 0.1 * Math.sin(h * 0.45 + n.noise(x / 60, z / 60) * 2.5);
+        } else if (s !== SURF.CONCRETE && s !== SURF.FIELD) {
+          k *= lerp(0.85, 1, clamp((ny - 0.7) / 0.25, 0, 1));
+        }
         if (h < 0) k *= clamp(1 + h / 30, 0.45, 1);
         // wet sand near shoreline
         if (h < 1.2 && h > -2 && s === SURF.SAND) k *= 0.82;

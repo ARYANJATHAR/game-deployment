@@ -73,7 +73,7 @@ export class Game {
   // ======================= setup =======================
   async init(onProgress) {
     const S = this.save.settings;
-    const renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: S.quality !== 'low', powerPreference: 'high-performance', preserveDrawingBuffer: false });
+    const renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: false });
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.shadowMap.enabled = true;
@@ -185,9 +185,17 @@ export class Game {
 
   _setupComposer() {
     const r = this.renderer;
-    this.composer = new EffectComposer(r);
+    // the composer renders into its own targets, so the canvas MSAA does nothing: multisample the targets instead
+    const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+    this.composer = new EffectComposer(r, rt);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.45, 0.4, 2.4);
+    // clamp extreme HDR values (sun glints on glossy paint) so bloom doesn't smear them across the screen
+    this.composer.addPass(new ShaderPass({
+      uniforms: { tDiffuse: { value: null } },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'uniform sampler2D tDiffuse; varying vec2 vUv; void main() { vec4 c = texture2D(tDiffuse, vUv); gl_FragColor = vec4(min(c.rgb, vec3(6.0)), c.a); }',
+    }));
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.4, 0.4, 2.4);
     this.composer.addPass(this.bloom);
     // radial blur toward the screen centre at high speed
     this.speedBlur = new ShaderPass({
@@ -206,6 +214,82 @@ export class Game {
     this.speedBlur.enabled = false;
     this.composer.addPass(this.speedBlur);
     this.composer.addPass(new OutputPass());
+    // colour grade in display space: contrast curve, saturation, warm/cool split, vignette and sun flare
+    this.grade = new ShaderPass({
+      uniforms: {
+        tDiffuse: { value: null },
+        contrast: { value: 0.22 },
+        saturation: { value: 1.12 },
+        vignette: { value: 0.28 },
+        shadowTint: { value: new THREE.Vector3(0.985, 1.0, 1.03) },
+        highTint: { value: new THREE.Vector3(1.03, 1.0, 0.97) },
+        sunPos: { value: new THREE.Vector2(0.5, 0.5) },
+        sunVis: { value: 0 },
+        sunColor: { value: new THREE.Color(1, 0.85, 0.6) },
+        aspect: { value: 1 },
+      },
+      vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float contrast, saturation, vignette, sunVis, aspect;
+        uniform vec3 shadowTint, highTint, sunColor;
+        uniform vec2 sunPos;
+        varying vec2 vUv;
+        float ghost(vec2 p, vec2 c, float r) { float d = length((p - c) * vec2(aspect, 1.0)); return smoothstep(r, r * 0.6, d); }
+        void main() {
+          vec3 c = texture2D(tDiffuse, vUv).rgb;
+          // gentle S-curve around mid grey
+          vec3 s = c * c * (3.0 - 2.0 * c);
+          c = mix(c, s, contrast);
+          float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+          c = mix(vec3(l), c, saturation);
+          c *= mix(shadowTint, highTint, smoothstep(0.15, 0.8, l));
+          // sun glare and lens ghosts along the line through the screen centre
+          if (sunVis > 0.001) {
+            vec2 d = (vUv - sunPos) * vec2(aspect, 1.0);
+            float glare = exp(-length(d) * 9.0) * 0.12 + exp(-length(d) * 30.0) * 0.18;
+            vec2 axis = vec2(0.5) - sunPos;
+            float g = ghost(vUv, sunPos + axis * 1.4, 0.03) * 0.035
+                    + ghost(vUv, sunPos + axis * 1.75, 0.06) * 0.02
+                    + ghost(vUv, sunPos + axis * 2.25, 0.02) * 0.045
+                    + ghost(vUv, sunPos + axis * 0.6, 0.015) * 0.03;
+            c += sunColor * (glare + g * vec3(0.6, 0.9, 1.0)) * sunVis;
+          }
+          float v = length((vUv - 0.5) * vec2(aspect, 1.0)) / length(vec2(aspect, 1.0) * 0.5);
+          c *= 1.0 - vignette * smoothstep(0.45, 1.05, v);
+          gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+        }`,
+    });
+    this.composer.addPass(this.grade);
+  }
+
+  /** Time-of-day grading, plus the sun's screen position and terrain occlusion for the lens flare. */
+  _updateSunFlare(dt) {
+    const env = this.world.env;
+    const u = this.grade.uniforms;
+    let vis = 0;
+    if (env.sunDir.y > -0.02 && env.nightAmount < 0.6) {
+      const p = this._sunScreen || (this._sunScreen = new THREE.Vector3());
+      p.copy(env.sunDir).multiplyScalar(1000).add(this.camera.position).project(this.camera);
+      if (p.z < 1 && Math.abs(p.x) < 1.15 && Math.abs(p.y) < 1.15) {
+        u.sunPos.value.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5);
+        const edge = 1 - Math.min(1, Math.max(Math.abs(p.x), Math.abs(p.y)));
+        vis = Math.min(1, edge * 4 + 0.1) * (1 - env.rain) * (1 - env.fog * 0.8) * (1 - env.nightAmount);
+        // terrain occlusion: march toward the sun
+        const c = this.camera.position;
+        for (let d = 8; d < 1500 && vis > 0; d *= 1.35) {
+          const x = c.x + env.sunDir.x * d, y = c.y + env.sunDir.y * d, z = c.z + env.sunDir.z * d;
+          if (this.hf.heightAt(x, z) > y) vis = 0;
+        }
+      }
+    }
+    this._flare = (this._flare || 0) + (vis - (this._flare || 0)) * Math.min(1, dt * 8);
+    u.sunVis.value = this._flare;
+    u.sunColor.value.copy(env.sun.color);
+    u.aspect.value = this.camera.aspect;
+    // softer curve at night so dark scenes keep their detail
+    u.contrast.value = 0.22 - env.nightAmount * 0.17;
+    u.vignette.value = 0.28 - env.nightAmount * 0.1;
   }
 
   _resize() {
@@ -216,6 +300,10 @@ export class Game {
     const pr = base * (S.dynamicRes ? (this.resScale || 1) : 1);
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h, false);
+    const samples = S.quality === 'high' ? 4 : S.quality === 'medium' ? 2 : 0;
+    for (const t of [this.composer.renderTarget1, this.composer.renderTarget2]) {
+      if (t.samples !== samples) { t.samples = samples; t.dispose(); }
+    }
     this.composer.setPixelRatio(pr);
     this.composer.setSize(w, h);
     this.bloom.resolution.set(w * pr * 0.5, h * pr * 0.5);
@@ -240,6 +328,7 @@ export class Game {
       this.mapImage = this._drawRoadsOnMap(this.world.mapImage);
     }
     this.fx.quality = S.quality === 'low' ? 0.5 : S.quality === 'medium' ? 0.8 : 1;
+    this.fx.smokeLevel = S.smoke || 'medium';
     this.world.props.distScale = S.quality === 'low' ? 0.6 : S.quality === 'medium' ? 0.85 : 1;
     this.world.terrain.lodScale = S.quality === 'low' ? 0.7 : S.quality === 'medium' ? 0.9 : 1.15;
     this.hud.setMinimapVisible(S.showMinimap);
@@ -977,6 +1066,7 @@ export class Game {
     this.lastTime = now;
     this._perf(dt);
     dt = Math.min(dt, 0.1);
+    this.frameDt = dt;
     this.time += dt;
     this.input.update();
     this.touch.update();
@@ -1750,7 +1840,10 @@ export class Game {
 
   _render() {
     const S = this.save.settings;
-    if (S.bloom && S.quality !== 'low') this.composer.render();
-    else this.renderer.render(this.scene, this.camera);
+    if (S.quality !== 'low') {
+      this.bloom.enabled = S.bloom;
+      this._updateSunFlare(Math.min(0.1, this.frameDt || 0.016));
+      this.composer.render();
+    } else this.renderer.render(this.scene, this.camera);
   }
 }

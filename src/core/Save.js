@@ -6,6 +6,7 @@ export const DEFAULT_SETTINGS = {
   quality: 'medium', // low | medium | high
   shadows: 'medium',
   bloom: true,
+  smoke: 'medium', // off | low | medium | high
   units: 'kmh',
   masterVolume: 0.8,
   musicVolume: 0.5,

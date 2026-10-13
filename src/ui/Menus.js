@@ -2,6 +2,7 @@ import { el, piBadge } from './HUD.js';
 import { CARS, PAINTS, RIM_COLORS, UPGRADES, carStats, classFor } from '../config/cars.js';
 import { EVENTS, ACTIVITIES } from '../config/events.js';
 import { ACCOLADES } from '../config/accolades.js';
+import { defaultServerUrl } from '../net/Net.js';
 import { formatNumber, formatTime } from '../core/utils.js';
 import { xpForLevel } from '../core/Save.js';
 import { STATIONS } from '../audio/Audio.js';
@@ -204,10 +205,11 @@ export class Menus {
     };
     tile('Resume', 'Back to the road', '▶', () => g.resume(), true);
     if (g.race) {
-      tile('Restart Event', g.race.ev.name, '↻', () => g.restartEvent());
+      if (!g.race.online) tile('Restart Event', g.race.ev.name, '↻', () => g.restartEvent());
       tile('Quit Event', 'Return to free roam', '✕', () => g.quitEvent());
     }
     tile('World Map', 'Events, activities, fast travel', '🗺', () => g.openMap());
+    tile('Online', g.net.inRoom ? `Room ${g.net.room.public ? 'PUBLIC' : g.net.room.code} · ${g.net.room.players.length} drivers` : g.net.online ? 'Connected' : 'Multiplayer races & free roam', '🌐', () => this.online());
     if (!g.race) {
       tile('My Cars', `${p.garage.length} car${p.garage.length === 1 ? '' : 's'} owned`, '🚗', () => this.garage('garage'));
       tile('Autoshow', 'Buy new cars', '🏷', () => this.garage('autoshow'));
@@ -562,6 +564,150 @@ export class Menus {
     this.push(node, () => this.pop(), { name: 'accolades' });
   }
 
+  refreshIf(name, what = 'all') {
+    const t = this.top;
+    if (!t || t.name !== name) return;
+    if (what === 'chat' && t.refreshChat) t.refreshChat();
+    else if (t.refresh) t.refresh();
+  }
+
+  // ---------------- online ----------------
+  online() {
+    const g = this.game;
+    const net = g.net;
+    const S = g.save.settings;
+    const node = el('div', 'overlay', `<div class="topbar"><h1>ONLINE</h1><div class="wallet"><span class="st"></span></div></div>
+      <div class="body"><div class="online"></div></div><div class="hint-bar"><span><b>ESC</b>Back</span><span><b>Y</b>Chat while driving</span></div>`);
+    const box = node.querySelector('.online');
+    const st = node.querySelector('.st');
+    const sc = this.push(node, () => this.pop(), { name: 'online' });
+    let error = '';
+    const button = (label, fn, cls = '') => {
+      const b = el('button', `btn small nav ${cls}`, `<span>${label}</span>`);
+      b.onclick = fn;
+      return b;
+    };
+    const renderChat = () => {
+      const log = box.querySelector('.olog');
+      if (!log) return;
+      log.innerHTML = '';
+      for (const c of g.chatLog) {
+        const d = el('div');
+        const b = el('b');
+        b.textContent = `${c.name}: `;
+        b.style.color = c.color;
+        const t = el('span');
+        t.textContent = c.text;
+        d.append(b, t);
+        log.appendChild(d);
+      }
+      log.scrollTop = log.scrollHeight;
+    };
+    const render = () => {
+      box.innerHTML = '';
+      st.innerHTML = net.online ? `<span style="color:#7dffb0">● ONLINE</span> ${net.rtt ? `${Math.round(net.rtt)} ms` : ''}` : net.status === 'connecting' ? 'CONNECTING…' : '<span style="color:var(--muted)">○ OFFLINE</span>';
+      const left = el('div', 'panel');
+      const right = el('div', 'panel');
+      box.append(left, right);
+      if (!net.online) {
+        left.innerHTML = `<h2>Connect</h2><div class="desc">Race and cruise with friends. Everyone connects to the same Horizon Rush server.</div>
+          <h3>Driver name</h3><input type="text" class="name" maxlength="18"><h3>Server address</h3><input type="text" class="url" placeholder="ws://your-server:8787/ws">
+          <div class="desc err" style="color:#ff6b6b"></div>`;
+        left.querySelector('.name').value = g.playerName();
+        left.querySelector('.url').value = S.serverUrl || defaultServerUrl();
+        left.querySelector('.err').textContent = error;
+        const go = button(net.status === 'connecting' ? 'Connecting…' : 'Connect', async () => {
+          S.playerName = left.querySelector('.name').value.trim().slice(0, 18);
+          S.serverUrl = left.querySelector('.url').value.trim();
+          g.save.save();
+          error = '';
+          try {
+            await g.connectOnline(S.serverUrl);
+          } catch (e) {
+            error = `${e.message}. Check the address, and that the server is running (npm start).`;
+          }
+          render();
+        }, 'primary');
+        left.appendChild(go);
+        right.innerHTML = `<h2>How it works</h2><div class="desc">Run the game server with <b>npm run build</b> then <b>npm start</b> on any computer, then open
+          <b>http://that-computer:8787</b> on each device (same Wi-Fi works). Or deploy the server to a Node host and share its address.
+          <br><br>In a room you see other drivers live, can chat, and the host can start any event as an online race.</div>`;
+      } else if (!net.inRoom) {
+        left.innerHTML = '<h2>Play online</h2><div class="desc">Join everyone in public free roam, or make a private room for a race with friends.</div>';
+        left.appendChild(button('Join public free roam', () => net.send({ t: 'join', code: 'PUBLIC' }), 'primary'));
+        left.appendChild(button('Create private room', () => net.send({ t: 'create' })));
+        const row = el('div', 'row');
+        const code = el('input');
+        code.type = 'text';
+        code.placeholder = 'ROOM CODE';
+        code.maxLength = 5;
+        code.style.minWidth = '140px';
+        row.append(code, button('Join room', () => net.send({ t: 'join', code: code.value.trim().toUpperCase() })));
+        left.appendChild(row);
+        right.innerHTML = `<h2>${g.playerName()}</h2><div class="desc">Connected to ${net.url}</div>`;
+        right.appendChild(button('Disconnect', () => { g.disconnectOnline(); render(); }));
+      } else {
+        const room = net.room;
+        const isHost = room.host === net.id;
+        left.innerHTML = room.public
+          ? '<h3>Room</h3><div class="roomcode" style="font-size:32px;letter-spacing:2px">PUBLIC FREE ROAM</div>'
+          : `<h3>Room code — share it with friends</h3><div class="roomcode">${room.code}</div>`;
+        const pl = el('div', 'plist');
+        for (const p of room.players) {
+          const d = el('div');
+          const sw = el('i');
+          sw.style.background = p.paint;
+          const n = el('span');
+          n.textContent = `${p.name}${p.id === net.id ? ' (you)' : ''}${p.id === room.host && !room.public ? ' ★ host' : ''}`;
+          const c = el('small');
+          c.style.cssText = 'margin-left:auto;color:var(--muted)';
+          c.textContent = (CARS.find((x) => x.id === p.car) || {}).name || '';
+          d.append(sw, n, c);
+          pl.appendChild(d);
+        }
+        left.appendChild(el('h3', '', `Drivers (${room.players.length}/12)`));
+        left.appendChild(pl);
+        const row = el('div', 'row');
+        row.append(button('Back to the road', () => { this.closeAll(); g.resume(); }, 'primary'), button('Leave room', () => net.send({ t: 'leave' })), button('Disconnect', () => { g.disconnectOnline(); render(); }));
+        left.appendChild(row);
+        if (!room.public) {
+          right.appendChild(el('h2', '', 'Online race'));
+          if (room.race && room.race.state !== 'done') {
+            right.appendChild(el('div', 'desc', 'A race is in progress.'));
+          } else if (isHost) {
+            right.appendChild(el('div', 'desc', 'Pick an event. Everyone in the room is put on the grid and the countdown starts after 5 seconds.'));
+            const chips = el('div', 'chips');
+            let pick = g.onlinePick || 'festival-circuit';
+            for (const ev of EVENTS) {
+              const c = el('button', `chip nav ${ev.id === pick ? 'sel' : ''}`, ev.name);
+              c.onclick = () => { g.onlinePick = ev.id; render(); };
+              chips.appendChild(c);
+            }
+            right.appendChild(chips);
+            right.appendChild(button(`Start: ${EVENTS.find((e) => e.id === pick).name}`, () => net.send({ t: 'startRace', eventId: pick }), 'primary'));
+          } else right.appendChild(el('div', 'desc', 'Waiting for the host to start a race…'));
+        }
+        right.appendChild(el('h3', '', 'Chat'));
+        right.appendChild(el('div', 'olog'));
+        const crow = el('div', 'row');
+        const input = el('input');
+        input.type = 'text';
+        input.maxLength = 120;
+        input.placeholder = 'Say something…';
+        input.style.flex = '1';
+        const sendChat = () => { if (input.value.trim()) { net.send({ t: 'chat', text: input.value }); input.value = ''; } };
+        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChat(); e.stopPropagation(); });
+        crow.append(input, button('Send', sendChat));
+        right.appendChild(crow);
+        renderChat();
+      }
+      sc.setFocus(0);
+    };
+    sc.refresh = render;
+    sc.refreshChat = renderChat;
+    render();
+  }
+
   stats() {
     const p = this.game.save.progress;
     const s = p.stats;
@@ -583,7 +729,27 @@ export class Menus {
       <div class="facts"><div><span>TYPE</span>${ev.type === 'circuit' ? `${ev.laps} Lap${ev.laps > 1 ? 's' : ''}` : ev.type === 'showcase' ? 'Showcase' : ev.type === 'drag' ? 'Drag' : ev.type === 'drift' ? 'Drift Score' : 'Sprint'}</div>
       <div><span>LENGTH</span>${(info.length / 1000).toFixed(1)} km</div><div><span>REWARD</span>${formatNumber(ev.reward)}</div>
       <div><span>${ev.type === 'drift' ? '3 STARS' : 'DRIVATARS'}</span>${ev.type === 'showcase' ? 'Jet' : ev.type === 'drift' ? formatNumber(ev.stars[2]) : ev.opponents || 7}</div><div><span>DIFFICULTY</span>${g.save.settings.difficulty.toUpperCase()}</div><div><span>BEST</span>${rec ? formatTime(rec.best) : '--'}</div></div>
-      <div class="actions"><button class="btn primary nav go"><span>Start Event</span></button><button class="btn nav cancel"><span>Cancel</span></button></div></div>`);
+      <div class="actions"><button class="btn primary nav go"><span>Start Event</span></button><button class="btn nav cancel"><span>Cancel</span></button></div>
+      <div class="lb"></div></div>`);
+    const lbEl = node.querySelector('.lb');
+    const drawLb = () => {
+      const list = g.leaderboards[ev.id];
+      if (!g.net.online) { lbEl.innerHTML = ''; return; }
+      if (!list) { lbEl.innerHTML = '<h3 style="margin:0;color:var(--muted)">ONLINE TOP TIMES · loading…</h3>'; return; }
+      lbEl.innerHTML = '<h3 style="margin:0 0 4px;color:var(--muted);letter-spacing:2px;font-size:13px">ONLINE TOP TIMES</h3>' +
+        (list.length ? '' : '<div class="desc">No times yet — be the first!</div>');
+      list.slice(0, 5).forEach((e, i) => {
+        const d = el('div');
+        const a = el('span'); a.textContent = String(i + 1);
+        const b = el('span'); b.textContent = `${e.name} · ${(CARS.find((c) => c.id === e.car) || {}).name || ''}`;
+        const c = el('span'); c.textContent = formatTime(e.time);
+        d.append(a, b, c);
+        lbEl.appendChild(d);
+      });
+    };
+    if (g.net.online) g.net.send({ t: 'leaderboard', eventId: ev.id });
+    drawLb();
+    g.onLeaderboard = (id) => { if (id === ev.id) drawLb(); };
     node.querySelector('.go').onclick = () => { this.pop(); g.startEvent(ev.id); };
     node.querySelector('.cancel').onclick = () => { this.pop(); g.resume(true); };
     this.push(node, () => { this.pop(); g.resume(true); }, { name: 'eventcard' });
@@ -600,7 +766,8 @@ export class Menus {
       <div class="rewards"><span class="cr">+${formatNumber(data.credits)} CR</span><span class="xp">+${formatNumber(data.xp)} XP</span>${data.record ? '<span style="color:var(--yellow)">NEW PERSONAL BEST</span>' : ''}</div>
       <div class="actions" style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn primary nav cont"><span>Continue</span></button><button class="btn nav again"><span>Restart</span></button></div></div>`);
     node.querySelector('.cont').onclick = () => { this.pop(); g.finishResults(); };
-    node.querySelector('.again').onclick = () => { this.pop(); g.restartEvent(); };
+    if (g.race && g.race.online) node.querySelector('.again').remove();
+    else node.querySelector('.again').onclick = () => { this.pop(); g.restartEvent(); };
     this.push(node, () => { this.pop(); g.finishResults(); }, { name: 'results' });
   }
 

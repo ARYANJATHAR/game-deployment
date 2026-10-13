@@ -23,6 +23,29 @@ npm run preview    # serves dist/ on http://localhost:4173
 
 You need a browser with WebGL 2 (recent Chrome, Edge, Firefox or Safari). On first launch the game picks a quality preset for your device. Dynamic resolution then lowers the render resolution when the frame rate drops. You can change both in **Settings**, and turn on **Show FPS** there.
 
+## Multiplayer
+
+Online play needs the bundled Node server, which serves the game and the multiplayer socket from one port:
+
+```bash
+npm install
+npm run serve      # builds the game, then starts the server on http://localhost:8787
+# or, after a build:  npm start   (PORT=9000 npm start for another port)
+```
+
+- **Same Wi-Fi / LAN party:** run the server on one computer. Everyone else opens `http://<that-computer's-IP>:8787` and picks **Pause → Online → Connect**.
+- **Internet:** deploy the server to any Node host. Use the build command `npm ci && npm run build` and the start command `npm start`; the host provides `PORT`. There is also a `Dockerfile`: `docker build -t horizon-rush . && docker run -p 8787:8787 -v hr-data:/data horizon-rush`.
+- **GitHub Pages build:** it has no server of its own. In **Online**, enter the address of a deployed server. Browsers require `wss://` (TLS) when the page is served over `https://`.
+
+**What you can do online**
+- Public free roam, or private rooms for up to 12 drivers, joined with a 5-letter code.
+- Other drivers' cars appear live, with name tags and engine sounds, and you can collide with them.
+- Text chat: press **Y** while driving, or use the Online screen.
+- The room host can start any of the 12 events as an online race. Everyone gets a synced countdown, live standings and shared results. Online races pay a bonus that grows with the number of drivers.
+- Online leaderboards: the server keeps the top times for every event, from both online races and solo runs. They're shown on each event card.
+
+Rewind is disabled while you're in an online room.
+
 ## Controls
 
 | Action | Keyboard | Gamepad |
@@ -41,6 +64,7 @@ You need a browser with WebGL 2 (recent Chrome, Edge, Firefox or Safari). On fir
 | Photo mode | F | — |
 | Radio station | N | — |
 | Horn / headlights / toggle HUD | H / L / U | — |
+| Chat (online) | Y | — |
 
 Touch devices get on-screen steering, pedals, handbrake and rewind buttons.
 
@@ -74,6 +98,9 @@ Touch devices get on-screen steering, pedals, handbrake and rewind buttons.
 - Photo mode with exposure, saturation, time-of-day and FOV controls.
 - Progress and settings are saved automatically in `localStorage`.
 
+**Multiplayer**
+- Node + WebSocket server (`server/index.js`) with public and private rooms, 15 Hz state snapshots with client-side interpolation, chat, synced online races and persistent leaderboards.
+
 **Audio** (all synthesised with WebAudio)
 - Engine sound per car based on cylinder count and RPM, with turbo whistle, blow-off and overrun crackles.
 - Tyre screech, gravel rumble, wind, impacts, smashes and UI sounds.
@@ -88,6 +115,7 @@ npm test
 
 The tests run headless in Node and check:
 - `tests/physics.test.mjs`: each car's acceleration, top speed, braking distance, cornering g and resistance to rolling over, plus resting height on the real island.
+- `tests/server.test.mjs`: the multiplayer protocol: rooms, codes, input sanitising, snapshots, chat, host-only race start, finish order, results and leaderboards.
 - `tests/ai.test.mjs`: the AI completing the town circuit, mountain pass, dirt trail and full highway loop in two different cars without excessive resets.
 
 ## Project layout
@@ -103,7 +131,9 @@ src/
   audio/               engine, effects and music synthesis
   camera/              chase / hood / bumper / orbit / cinematic cameras
   ui/                  HUD, menus, world map, touch controls
-  config/              cars, upgrades, events, activities
+  config/              cars, upgrades, events, activities, accolades
+  net/                 multiplayer client and remote car interpolation
+server/                multiplayer + static file server
 tests/                 headless physics and AI tests
 dev/cars.html          car model viewer used during development
 ```

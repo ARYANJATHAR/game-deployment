@@ -71,6 +71,11 @@ export class HUD {
     this.vignette = el('div', 'vignette');
     this.root.appendChild(this.vignette);
 
+    this.netEl = el('div', 'netbadge hidden');
+    this.tr.appendChild(this.netEl);
+    this.chatEl = el('div', 'chatlog');
+    this.root.appendChild(this.chatEl);
+
     this.skillNames = [];
     this.skillHide = 0;
     this._resize();
@@ -414,6 +419,25 @@ export class HUD {
 
   setWrongWay(on) {
     this.wrongWay.classList.toggle('hidden', !on);
+  }
+
+  setNet(text) {
+    if (!text) { this.netEl.classList.add('hidden'); return; }
+    this.netEl.classList.remove('hidden');
+    if (this._net !== text) { this._net = text; this.netEl.textContent = text; }
+  }
+
+  chat(name, text, color = '#19d3ff') {
+    const line = el('div', 'chatline');
+    const n = el('b', '', '');
+    n.textContent = `${name}: `;
+    n.style.color = color;
+    const t = el('span', '', '');
+    t.textContent = text;
+    line.append(n, t);
+    this.chatEl.appendChild(line);
+    while (this.chatEl.children.length > 6) this.chatEl.firstChild.remove();
+    setTimeout(() => line.classList.add('old'), 12000);
   }
 
   setVignette(x) {

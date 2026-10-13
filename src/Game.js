@@ -31,6 +31,8 @@ import { HUD } from './ui/HUD.js';
 import { Menus } from './ui/Menus.js';
 import { MapView } from './ui/MapView.js';
 import { TouchControls } from './ui/Touch.js';
+import { Net } from './net/Net.js';
+import { RemotePlayers } from './net/RemotePlayers.js';
 
 const STEP = 1 / 120;
 const DRIVATARS = ['NitroNomad', 'ApexHunter', 'DriftQueen', 'TurboTom', 'GravelGhost', 'RedlineRita', 'SlipstreamSam', 'Kiko_RS', 'MidnightMax',
@@ -60,6 +62,10 @@ export class Game {
     this.radioIndex = 0;
     this.weatherTimer = 120;
     this.photoFov = 45;
+    this.net = new Net();
+    this.chatLog = [];
+    this.leaderboards = {};
+    this.netSendT = 0;
     this.skillNames = [];
     this.lastStatSave = 0;
   }
@@ -115,6 +121,8 @@ export class Game {
     this.menus = new Menus(this.uiRoot, this);
     this.mapView = new MapView(this);
     this.touch = new TouchControls(this.uiRoot, this.input);
+    this.remotes = new RemotePlayers(this.scene, this.net, this.audio);
+    this._hookNet();
 
     this._setupComposer();
     this.applySettings(true);
@@ -664,6 +672,7 @@ export class Game {
 
   quitEvent(silent = false) {
     if (!this.race) return;
+    if (this.race.online) this.net.send({ t: 'quitRace' });
     this._disposeGhost();
     this.race.dispose();
     this.race = null;
@@ -706,8 +715,12 @@ export class Game {
           this.audio.fanfare();
           // auto-drive after finishing
           this.player.ai = new AIController(this.player, race.route, { cruise: 14 });
-          this.finishTimer = 4;
+          this.finishTimer = race.online ? 40 : 4;
           this.playerFinishPos = pos;
+          if (race.online) {
+            this.net.send({ t: 'finish', time: race.time });
+            this.hud.toast('FINISHED', 'Waiting for the other drivers…', 'cyan', 4000);
+          }
         }
         break;
       default:
@@ -743,6 +756,9 @@ export class Game {
     const time = pl.finishTime;
     const record = !prev || time < prev.best;
     p.events[ev.id] = { best: record ? time : prev.best, position: prev ? Math.min(prev.position, pos) : pos };
+    if (record && isFinite(time) && this.net.online && !race.online && ev.type !== 'drift') {
+      this.net.send({ t: 'submitTime', eventId: ev.id, time });
+    }
     if (record && this.ghostRec && isFinite(time)) {
       const entry = this.save.currentCar;
       this.ghostRec.save(ev.id, entry.id, entry.paint, time);
@@ -1015,6 +1031,7 @@ export class Game {
     const st = this.state;
     if (this.menus.open) this.menus.update(input);
     if (this.mapView.active) this.mapView.draw();
+    if (this.net.inRoom) this.remotes.update(dt, this.camera.position);
 
     if (st === 'title' || st === 'starter') {
       this._simulate(dt, false);
@@ -1065,7 +1082,7 @@ export class Game {
     if (this.audio.enabled) this.audio.horn(input.held('horn'));
 
     // rewind
-    const rewinding = input.held('rewind') && this.rewindBuf.length > 2 && st !== 'results' && !(this.race && this.race.state === 'countdown');
+    const rewinding = input.held('rewind') && this.rewindBuf.length > 2 && st !== 'results' && !(this.race && (this.race.state === 'countdown' || this.race.online)) && !this.net.inRoom;
     this.hud.setRewind(rewinding);
     if (rewinding) {
       this._rewindStep();
@@ -1087,6 +1104,7 @@ export class Game {
       if (input.pressed('shiftDown')) c.shiftDown = true;
     }
     if (input.pressed('reset')) this._resetToRoad();
+    if (input.pressed('chat') && this.net.inRoom) { this._openChat(); return; }
 
     // event prompt / activation
     if (st === 'freeroam') {
@@ -1097,7 +1115,9 @@ export class Game {
       } else this.hud.clearPrompt();
     } else this.hud.clearPrompt();
 
+    this.physics.kinematic = this.net.inRoom ? this.remotes.obstacles() : [];
     this._simulate(dt, true);
+    this._netSend(dt);
 
     // race logic
     if (this.race) {
@@ -1109,7 +1129,11 @@ export class Game {
         if (this.ghost) this.ghost.update(this.race.time);
       }
       for (const e of events) this._onRaceEvent(e);
-      if (this.finishTimer !== undefined && this.finishTimer > 0) {
+      if (this.finishTimer !== undefined && this.finishTimer > 0 && this.race.online) {
+        // online: results come from the server; fall back to local results if it goes quiet
+        this.finishTimer -= dt;
+        if (this.finishTimer <= 0) { this.finishTimer = undefined; this._showResults(); }
+      } else if (this.finishTimer !== undefined && this.finishTimer > 0) {
         this.finishTimer -= dt;
         const allDone = this.race.p.every((x) => x.finished);
         if (this.finishTimer <= 0 || (allDone && this.finishTimer < 2.5)) {
@@ -1282,6 +1306,244 @@ export class Game {
     if (pl.pos.y < -40) this._resetToRoad();
   }
 
+  // ---------- online ----------
+  playerName() {
+    const S = this.save.settings;
+    if (!S.playerName) {
+      S.playerName = `Driver${Math.floor(1000 + Math.random() * 9000)}`;
+      this.save.save();
+    }
+    return S.playerName;
+  }
+
+  _hello() {
+    const e = this.save.currentCar || { id: 'vela', paint: '#ff2d87' };
+    return { name: this.playerName(), car: e.id, paint: e.paint };
+  }
+
+  async connectOnline(url) {
+    if (!url) throw new Error('No server address');
+    await this.net.connect(url, this._hello());
+    this.hud.toast('CONNECTED', 'Join a room to see other drivers', 'cyan');
+  }
+
+  disconnectOnline() {
+    if (this.race && this.race.online) this.quitEvent(true);
+    this.net.disconnect();
+    this.remotes.clear();
+    this.physics.kinematic = [];
+  }
+
+  _hookNet() {
+    const net = this.net;
+    const colorOf = (id) => {
+      const p = net.room && net.room.players.find((x) => x.id === id);
+      return p ? p.paint : '#19d3ff';
+    };
+    const pushChat = (name, text, color) => {
+      this.chatLog.push({ name, text, color });
+      if (this.chatLog.length > 40) this.chatLog.shift();
+      this.hud.chat(name, text, color);
+      this.menus.refreshIf('online', 'chat');
+    };
+    net.on('room', (m) => {
+      this.remotes.syncRoster(m.code ? m.players : []);
+      if (!m.code) this.physics.kinematic = [];
+      this.menus.refreshIf('online');
+      if (m.code && this._lastRoom !== m.code) {
+        this._lastRoom = m.code;
+        this.hud.toast(m.public ? 'PUBLIC FREE ROAM' : `ROOM ${m.code}`, `${m.players.length} driver${m.players.length > 1 ? 's' : ''} online`, 'cyan');
+      }
+      if (!m.code) this._lastRoom = null;
+    });
+    net.on('snap', (m) => this.remotes.onSnapshot(m));
+    net.on('joined', (m) => pushChat('●', `${m.name} joined`, '#7dffb0'));
+    net.on('left', (m) => {
+      const r = this.remotes.players.get(m.id);
+      if (r) pushChat('●', `${r.name} left`, '#ff8a8a');
+      if (this.race && this.race.online) {
+        const pp = this.race.p.find((x) => x.netId === m.id);
+        if (pp && !pp.finished) pp.dnf = true;
+      }
+    });
+    net.on('chat', (m) => pushChat(m.name, m.text, colorOf(m.id)));
+    net.on('error', (m) => this.hud.toast('ONLINE', m.message, '', 3500));
+    net.on('status', () => this.menus.refreshIf('online'));
+    net.on('disconnected', () => {
+      this.hud.toast('DISCONNECTED', 'Lost connection to the server', '', 4000);
+      this.remotes.clear();
+      this.physics.kinematic = [];
+      if (this.race && this.race.online && this.race.state !== 'done') this.race.online = false;
+    });
+    net.on('leaderboard', (m) => {
+      this.leaderboards[m.eventId] = m.list;
+      if (this.onLeaderboard) this.onLeaderboard(m.eventId);
+    });
+    net.on('raceStart', (m) => this._startOnlineRace(m));
+    net.on('raceProgress', (m) => {
+      if (!this.race || !this.race.online) return;
+      for (const s of m.standings) {
+        const pp = this.race.p.find((x) => x.netId === s.id);
+        if (pp && pp.remote && !pp.finished) pp.progress = s.prog;
+      }
+    });
+    net.on('finished', (m) => {
+      if (!this.race || !this.race.online) return;
+      const pp = this.race.p.find((x) => x.netId === m.id);
+      if (!pp || !pp.remote || pp.finished) return;
+      pp.finished = true;
+      pp.finishTime = m.time;
+      pp.progress = this.race.total;
+      this.race.finishOrder.push(pp);
+      this.hud.toast(`${pp.name.toUpperCase()} FINISHED`, `P${m.position} · ${formatTime(m.time)}`, '', 2500);
+    });
+    net.on('raceResults', (m) => {
+      if (!this.race || !this.race.online) return;
+      this._showOnlineResults(m);
+    });
+  }
+
+  _netSend(dt) {
+    if (!this.net.inRoom) return;
+    this.netSendT -= dt;
+    if (this.netSendT > 0) return;
+    this.netSendT = 1 / 15;
+    const pl = this.player;
+    const r = pl.root;
+    const msg = {
+      t: 'state',
+      p: [+r.position.x.toFixed(2), +r.position.y.toFixed(2), +r.position.z.toFixed(2)],
+      q: [+r.quaternion.x.toFixed(4), +r.quaternion.y.toFixed(4), +r.quaternion.z.toFixed(4), +r.quaternion.w.toFixed(4)],
+      v: [+pl.vel.x.toFixed(2), +pl.vel.y.toFixed(2), +pl.vel.z.toFixed(2)],
+      st: +pl.steerAngle.toFixed(3), rpm: Math.round(pl.rpm), g: pl.gear, th: +pl.controls.throttle.toFixed(2),
+      b: (pl.gear === -1 ? pl.controls.throttle : pl.controls.brake) > 0.1 ? 1 : 0, l: pl.lightsOn ? 1 : 0,
+    };
+    if (this.race && this.race.online) {
+      const me = this.race.p.find((x) => x.isPlayer);
+      if (me) msg.prog = Math.round(me.progress);
+    }
+    this.net.send(msg);
+    // keep the server's car/paint in sync with the garage
+    const h = this._hello();
+    const key = `${h.car}|${h.paint}|${h.name}`;
+    if (key !== this._helloKey) {
+      this._helloKey = key;
+      this.net.send({ t: 'hello', ...h });
+    }
+  }
+
+  _openChat() {
+    if (this.chatBox) return;
+    const box = document.createElement('div');
+    box.className = 'chatbox interactive';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 120;
+    input.placeholder = 'Chat — Enter to send, Esc to cancel';
+    box.appendChild(input);
+    this.uiRoot.appendChild(box);
+    this.chatBox = box;
+    const close = () => { box.remove(); this.chatBox = null; this.input.keys.clear(); };
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') {
+        if (input.value.trim()) this.net.send({ t: 'chat', text: input.value });
+        close();
+      } else if (e.key === 'Escape') close();
+    });
+    input.addEventListener('blur', () => setTimeout(close, 50));
+    setTimeout(() => input.focus(), 0);
+  }
+
+  _startOnlineRace(m) {
+    const ev = EVENTS.find((x) => x.id === m.eventId);
+    const route = this.eventRoutes.get(m.eventId);
+    if (!ev || !route || !this.player) return;
+    if (!m.grid.includes(this.net.id)) return;
+    if (this.race) {
+      this.race.dispose();
+      this.race = null;
+    }
+    this._disposeGhost();
+    this._clearOpponents();
+    this._clearTraffic();
+    this.fx.clear();
+    this.menus.closeAll();
+    this.endPreview();
+    this.audio.suspend(false);
+    this.skills.breakChain('');
+    const entry = this.save.currentCar;
+    const pDef = CARS.find((c) => c.id === entry.id);
+    const participants = m.grid.map((id) => {
+      if (id === this.net.id) return { vehicle: this.player, ai: null, name: 'You', isPlayer: true, car: pDef.name, netId: id };
+      const r = this.remotes.players.get(id);
+      const info = this.net.room && this.net.room.players.find((x) => x.id === id);
+      const proxy = r ? r.proxy : { pos: new THREE.Vector3(), vel: new THREE.Vector3(), forward: new THREE.Vector3(0, 0, -1), right: new THREE.Vector3(1, 0, 0), speed: 0 };
+      const def = CARS.find((c) => c.id === (info ? info.car : '')) || CARS[0];
+      return { vehicle: proxy, ai: null, name: info ? info.name : 'Driver', isPlayer: false, remote: true, car: def.name, netId: id };
+    });
+    const race = new Race(this.scene, ev, route, participants);
+    race.online = true;
+    race.countdown = Math.max(1, (m.startAt - this.net.serverNow()) / 1000);
+    const slot = race.gridSlot(m.grid.indexOf(this.net.id));
+    this.player.place(slot.x, slot.y, slot.z, slot.heading);
+    this.player.frozen = true;
+    this.player.ai = null;
+    this.race = race;
+    this.raceRoute = route;
+    this.ghostRec = new GhostRecorder();
+    const pp = this.player.p;
+    this.playerProfile = route.speedProfile(0.9 * pp.grip + Math.min(0.3, pp.downforce * 0.05), 0.85 * pp.brake, 120, pp.offroad);
+    this.state = 'race';
+    this.rewindBuf = [];
+    this.finishTimer = undefined;
+    this.activities.setVisible(false);
+    this.setWaypoint(null);
+    this.rig.snap();
+    this.save.progress.stats.races++;
+    this.hud.toast(`ONLINE · ${ev.name.toUpperCase()}`, `${m.grid.length} drivers · ${(route.length / 1000).toFixed(1)} km`, 'cyan', 3500);
+  }
+
+  _showOnlineResults(m) {
+    const race = this.race;
+    const ev = race.ev;
+    this.finishTimer = undefined;
+    const rows = m.results.map((r) => ({
+      name: r.id === this.net.id ? 'You' : r.name,
+      car: (CARS.find((c) => c.id === r.car) || {}).name || '',
+      time: r.time ?? race.time,
+      me: r.id === this.net.id,
+      dnf: r.time === null,
+    }));
+    let pos = rows.findIndex((r) => r.me) + 1;
+    if (pos <= 0) pos = rows.length + 1;
+    const mine = m.results.find((r) => r.id === this.net.id);
+    const finished = mine && mine.time !== null;
+    const frac = finished ? POSITION_REWARD[Math.min(pos, POSITION_REWARD.length) - 1] : 0.05;
+    // online races pay a bonus that grows with the number of real opponents
+    const bonus = 1 + Math.min(0.5, (rows.length - 1) * 0.1);
+    const credits = Math.round((ev.reward * frac * bonus) / 100) * 100;
+    const xp = Math.round(ev.xp * (0.4 + frac * 0.6) * bonus);
+    const p = this.save.progress;
+    if (finished) {
+      const prev = p.events[ev.id];
+      const record = !prev || mine.time < prev.best;
+      p.events[ev.id] = { best: record ? mine.time : prev.best, position: prev ? Math.min(prev.position, pos) : pos };
+      if (record && this.ghostRec) {
+        const entry = this.save.currentCar;
+        this.ghostRec.save(ev.id, entry.id, entry.paint, mine.time);
+      }
+    }
+    if (pos === 1 && finished) p.stats.wins++;
+    this.addXP(xp, credits);
+    this.save.save();
+    race.state = 'done';
+    this.state = 'results';
+    const title = !finished ? 'Did not finish' : pos === 1 ? 'Online victory!' : `Finished ${pos}${['st', 'nd', 'rd'][pos - 1] || 'th'} online`;
+    this.menus.results({ event: ev, rows, credits, xp, record: false, title });
+    this.lastEventId = null;
+  }
+
   // ---------- rewind ----------
   _recordRewind(dt) {
     this.rewindTimer += dt;
@@ -1387,6 +1649,10 @@ export class Game {
     const p = this.save.progress;
     hud.setProgress(p.credits, p.level, p.xp / xpForLevel(p.level));
     hud.showProgress(!this.race);
+    if (this.net.inRoom) {
+      const r = this.net.room;
+      hud.setNet(`● ONLINE · ${r.public ? 'PUBLIC' : `ROOM ${r.code}`} · ${r.players.length} DRIVER${r.players.length > 1 ? 'S' : ''}`);
+    } else hud.setNet(this.net.online ? '● ONLINE' : null);
     // minimap
     if (S.showMinimap) {
       const icons = [];
@@ -1397,6 +1663,7 @@ export class Game {
       }
       for (const t of this.traffic) icons.push({ x: t.v.pos.x, z: t.v.pos.z, color: '#cfd6e6', shape: 'car', r: 4 });
       for (const v of this.opponents) icons.push({ x: v.pos.x, z: v.pos.z, color: '#ffb000', shape: 'car', r: 5 });
+      for (const r of this.remotes.players.values()) icons.push({ x: r.proxy.pos.x, z: r.proxy.pos.z, color: r.paint, shape: 'diamond', r: 6, pin: true });
       let route = null, routeColor;
       if (this.race) {
         route = this._routeSlice(this.race.route, pl, 900);

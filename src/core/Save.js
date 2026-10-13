@@ -25,6 +25,8 @@ export const DEFAULT_SETTINGS = {
   ghost: true,
   dynamicRes: true,
   showFps: false,
+  playerName: '',
+  serverUrl: '',
 };
 
 export function defaultProgress() {

@@ -20,6 +20,7 @@ const KEYMAP = {
   radio: ['KeyN'],
   photo: ['KeyF'],
   hud: ['KeyU'],
+  chat: ['KeyY', 'Slash'],
   up: ['ArrowUp', 'KeyW'],
   down: ['ArrowDown', 'KeyS'],
   navLeft: ['ArrowLeft', 'KeyA'],

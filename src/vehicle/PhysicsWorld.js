@@ -14,6 +14,7 @@ export class PhysicsWorld {
     this.weatherGrip = 1;
     this.onSmash = null;
     this.onCollision = null;
+    this.kinematic = []; // remote players: boxes moving with a known velocity
   }
 
   groundSample(x, z, out) {
@@ -42,6 +43,17 @@ export class PhysicsWorld {
         if (dx * dx + dz * dz > 49) continue;
         if (Math.abs(a.pos.y - b.pos.y) > 2.5) continue;
         this._carCar(a, b);
+      }
+    }
+    // remote players (network cars) push local cars but are not pushed back
+    if (this.kinematic.length) {
+      for (const v of this.vehicles) {
+        if (v.frozen || v.ghost) continue;
+        for (const k of this.kinematic) {
+          const dx = v.pos.x - k.cx, dz = v.pos.z - k.cz;
+          if (dx * dx + dz * dz > 49) continue;
+          this._kinematicHit(v, k);
+        }
       }
     }
     // water drag
@@ -114,6 +126,28 @@ export class PhysicsWorld {
           this.onCollision && this.onCollision(v, null, vn, hit, c);
         }
       }
+    }
+  }
+
+  _kinematicHit(v, k) {
+    const o = this._obb(v);
+    if (k.y1 < o.y0 || k.y0 > o.y1) return;
+    const hit = obbVsObb(o, k);
+    if (!hit) return;
+    _n.set(hit.nx, 0, hit.nz); // from local car toward the remote car
+    v.pos.x -= _n.x * hit.depth;
+    v.pos.z -= _n.z * hit.depth;
+    const ra = new THREE.Vector3(hit.px - v.pos.x, 0, hit.pz - v.pos.z);
+    const rel = v.angVel.clone().cross(ra).add(v.vel).sub(k.vel);
+    const vn = rel.dot(_n);
+    if (vn <= 0) return;
+    // the remote car is treated as an equal mass we cannot move
+    const kk = v.invMassAlong(ra, _n) + 1 / v.mass;
+    const j = ((1 + 0.2) * vn) / kk;
+    v._applyImpulse(ra, _n.clone().multiplyScalar(-j));
+    if (vn > 1.5) {
+      v._impact(vn, new THREE.Vector3(hit.px, v.pos.y, hit.pz));
+      this.onCollision && this.onCollision(v, k.remote.proxy, vn, hit);
     }
   }
 

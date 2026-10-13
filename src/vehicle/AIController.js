@@ -134,7 +134,13 @@ export class AIController {
       const allowed = Math.sqrt(vt * vt + 2 * 7.5 * v.p.brake * d);
       if (allowed < target) target = allowed;
     }
-    if (!r.closed && proj.s > r.length - 5) target = 0;
+    if (!r.closed && proj.s > r.length - 6) {
+      // end of the route: roll to a stop without the gearbox engaging reverse
+      c.throttle = 0;
+      c.brake = speed > 1.5 ? 0.6 : 0;
+      c.handbrake = speed <= 1.5 ? 1 : 0;
+      return;
+    }
     target *= this.rubber;
     if (this.cruise) target = Math.min(target, this.cruise);
     const err = target - speed;

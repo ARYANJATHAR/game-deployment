@@ -188,7 +188,7 @@ export class Race {
     this.time += dt;
     const r = this.route;
     for (const pp of this.p) {
-      if (pp.finished) continue;
+      if (pp.finished || pp.remote) continue; // remote racers report their own progress
       const v = pp.vehicle;
       let pr = r.project(v.pos.x, v.pos.z, pp.hint, 50);
       if (pr.dist > 40) pr = r.project(v.pos.x, v.pos.z, -1);

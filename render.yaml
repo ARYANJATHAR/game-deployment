@@ -1,0 +1,15 @@
+# Render Blueprint for the Horizon Rush multiplayer server.
+# The game itself is hosted on Vercel; this service only runs the WebSocket server.
+services:
+  - type: web
+    name: horizon-rush-multiplayer
+    runtime: node
+    plan: free
+    buildCommand: npm ci --omit=dev
+    startCommand: node server/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: ALLOWED_ORIGINS
+        value: https://*.vercel.app,http://localhost:5173

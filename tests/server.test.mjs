@@ -5,12 +5,18 @@ import path from 'node:path';
 import WebSocket from 'ws';
 
 process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'hr-data-'));
-const { createServer } = await import('../server/index.js');
+const { createServer, originAllowed } = await import('../server/index.js');
 const PORT = 18000 + Math.floor(Math.random() * 1000);
 const { server } = createServer({ port: PORT, log: false });
 
 let failures = 0;
 const check = (cond, msg) => { if (!cond) { failures++; console.log('FAIL', msg); } else console.log('ok  ', msg); };
+
+const allow = ['https://horizon-rush.vercel.app', 'https://*.vercel.app'];
+check(originAllowed('https://anything', []), 'no origin list allows everyone');
+check(originAllowed('https://horizon-rush.vercel.app', allow), 'exact origin allowed');
+check(originAllowed('https://horizon-rush-git-dev.vercel.app', allow), 'wildcard origin allowed');
+check(!originAllowed('https://evil.example.com', allow) && !originAllowed('https://vercel.app.evil.com', allow) && !originAllowed(undefined, allow), 'other origins rejected');
 
 function client(name) {
   const ws = new WebSocket(`ws://localhost:${PORT}/ws`);

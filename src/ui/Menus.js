@@ -616,13 +616,16 @@ export class Menus {
         left.querySelector('.name').value = g.playerName();
         left.querySelector('.url').value = S.serverUrl || defaultServerUrl();
         left.querySelector('.err').textContent = error;
+        if (net.status === 'connecting') left.appendChild(el('div', 'desc', 'Connecting… a server on a free hosting plan can take up to a minute to wake up.'));
         const go = button(net.status === 'connecting' ? 'Connecting…' : 'Connect', async () => {
           S.playerName = left.querySelector('.name').value.trim().slice(0, 18);
           S.serverUrl = left.querySelector('.url').value.trim();
           g.save.save();
           error = '';
           try {
-            await g.connectOnline(S.serverUrl);
+            const pending = g.connectOnline(S.serverUrl || defaultServerUrl());
+            render();
+            await pending;
           } catch (e) {
             error = `${e.message}. Check the address, and that the server is running (npm start).`;
           }

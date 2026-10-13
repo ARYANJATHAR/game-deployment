@@ -19,6 +19,22 @@ const TICK_MS = 1000 / 15;
 const MAX_ROOM = 12;
 const MAX_MSG = 4096;
 const FINISH_GRACE_MS = 30000;
+// Comma-separated list of sites allowed to connect, e.g. "https://my-game.vercel.app,https://*.vercel.app".
+// Empty means any origin may connect.
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
+
+export function originAllowed(origin, allowed = ALLOWED_ORIGINS) {
+  if (!allowed.length) return true;
+  if (!origin) return false;
+  return allowed.some((a) => {
+    if (a === '*') return true;
+    if (a.includes('*')) {
+      const [pre, post] = a.split('*');
+      return origin.startsWith(pre) && origin.endsWith(post) && origin.length >= pre.length + post.length;
+    }
+    return origin === a;
+  });
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json',
@@ -64,8 +80,14 @@ function serveStatic(req, res) {
   if (!file.startsWith(DIST)) { res.writeHead(403); res.end(); return; }
   fs.readFile(file, (err, data) => {
     if (err) {
+      if (err.code === 'ENOENT' && p === '/index.html') {
+        // multiplayer-only deployment (game hosted elsewhere, e.g. Vercel)
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        res.end('Horizon Rush multiplayer server is running. WebSocket endpoint: /ws');
+        return;
+      }
       res.writeHead(err.code === 'ENOENT' ? 404 : 500, { 'content-type': 'text/plain' });
-      res.end(err.code === 'ENOENT' ? 'Not found. Run "npm run build" first.' : 'Server error');
+      res.end(err.code === 'ENOENT' ? 'Not found.' : 'Server error');
       return;
     }
     res.writeHead(200, {
@@ -275,7 +297,10 @@ function onMessage(c, raw) {
 // ---------------- boot ----------------
 export function createServer({ port = PORT, log = true } = {}) {
   const server = http.createServer(serveStatic);
-  const wss = new WebSocketServer({ server, path: '/ws', maxPayload: MAX_MSG * 4 });
+  const wss = new WebSocketServer({
+    server, path: '/ws', maxPayload: MAX_MSG * 4,
+    verifyClient: (info) => originAllowed(info.origin),
+  });
   wss.on('connection', (ws) => {
     const c = { id: nextId++, ws, name: `Driver${nextId - 1}`, car: '', paint: '#ff2d87', room: null, state: null, alive: true };
     clients.set(ws, c);

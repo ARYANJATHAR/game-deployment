@@ -19,7 +19,7 @@ npm run build      # outputs to dist/
 npm run preview    # serves dist/ on http://localhost:4173
 ```
 
-`dist/` is a static site. It uses relative paths, so it can be hosted anywhere (GitHub Pages, Netlify, S3 or any static server). A GitHub Pages workflow is included in `.github/workflows/deploy.yml`.
+`dist/` is a static site with relative paths. The game is meant to be hosted on Vercel; see [Deploy](#deploy).
 
 You need a browser with WebGL 2 (recent Chrome, Edge, Firefox or Safari). On first launch the game picks a quality preset for your device. Dynamic resolution then lowers the render resolution when the frame rate drops. You can change both in **Settings**, and turn on **Show FPS** there.
 
@@ -34,8 +34,8 @@ npm run serve      # builds the game, then starts the server on http://localhost
 ```
 
 - **Same Wi-Fi / LAN party:** run the server on one computer. Everyone else opens `http://<that-computer's-IP>:8787` and picks **Pause → Online → Connect**.
-- **Internet:** deploy the server to any Node host. Use the build command `npm ci && npm run build` and the start command `npm start`; the host provides `PORT`. There is also a `Dockerfile`: `docker build -t horizon-rush . && docker run -p 8787:8787 -v hr-data:/data horizon-rush`.
-- **GitHub Pages build:** it has no server of its own. In **Online**, enter the address of a deployed server. Browsers require `wss://` (TLS) when the page is served over `https://`.
+- **Internet:** host the game on Vercel and the multiplayer server on Render. See [Deploy](#deploy).
+- Players can also type any server address into the **Server address** box on the Online screen. Browsers require `wss://` (TLS) when the page is served over `https://`.
 
 **What you can do online**
 - Public free roam, or private rooms for up to 12 drivers, joined with a 5-letter code.
@@ -45,6 +45,32 @@ npm run serve      # builds the game, then starts the server on http://localhost
 - Online leaderboards: the server keeps the top times for every event, from both online races and solo runs. They're shown on each event card.
 
 Rewind is disabled while you're in an online room.
+
+## Deploy
+
+Vercel serves static files and serverless functions. It can't keep WebSocket connections open, so the game and the multiplayer server are hosted separately:
+
+| Part | Host | Config |
+| --- | --- | --- |
+| Game (static `dist/`) | Vercel | `vercel.json` |
+| Multiplayer server (`server/index.js`) | Render (free web service) | `render.yaml` |
+
+**1. Multiplayer server on Render**
+1. On [render.com](https://render.com), choose **New → Blueprint** and select this repository. Render reads `render.yaml` and creates the `horizon-rush-multiplayer` web service.
+2. When it's live, open `https://<your-service>.onrender.com/health`. It should return `{"ok":true,...}`.
+3. Under the service's **Environment**, set `ALLOWED_ORIGINS` to your Vercel address, for example `https://horizon-rush.vercel.app`. Separate several addresses with commas. `*` is allowed as a wildcard, as in `https://*.vercel.app` (the default, which also covers Vercel preview deployments).
+
+**2. Game on Vercel**
+1. On [vercel.com](https://vercel.com), choose **Add New → Project** and import this repository. Vercel picks up `vercel.json` (Vite, `npm run build`, output `dist`).
+2. Under **Settings → Environment Variables**, add `VITE_MULTIPLAYER_URL` = `https://<your-service>.onrender.com`. The game turns it into `wss://<your-service>.onrender.com/ws`.
+3. Deploy. The variable is built into the game, so redeploy after changing it.
+
+The game then connects to that server by default from **Pause → Online → Connect**.
+
+**Notes**
+- Render's free tier sleeps after about 15 minutes without traffic. The first connection after that can take up to a minute while it wakes up; the game waits for it.
+- Free Render services have no persistent disk, so online leaderboards reset when the server restarts or redeploys. To keep them, add a Render disk and set `DATA_DIR` to its mount path, or use a paid plan.
+- Any other Node host works too: start command `npm start`, and the host provides `PORT`. There is also a `Dockerfile`: `docker build -t horizon-rush . && docker run -p 8787:8787 -v hr-data:/data horizon-rush`. That image serves both the game and the server from one port.
 
 ## Controls
 

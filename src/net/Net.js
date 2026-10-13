@@ -1,10 +1,26 @@
 // WebSocket client for the Horizon Rush multiplayer server.
 
+/** Turns "https://host", "host" or "wss://host/ws" into a WebSocket URL ending in /ws. */
+export function normalizeServerUrl(u) {
+  let url = String(u || '').trim();
+  if (!url) return '';
+  if (url.startsWith('https://')) url = `wss://${url.slice(8)}`;
+  else if (url.startsWith('http://')) url = `ws://${url.slice(7)}`;
+  else if (!/^wss?:\/\//.test(url)) url = `wss://${url}`;
+  url = url.replace(/\/+$/, '');
+  if (!/\/ws$/.test(url)) url += '/ws';
+  return url;
+}
+
 export function defaultServerUrl() {
+  // set VITE_MULTIPLAYER_URL at build time (e.g. in Vercel) to point at the multiplayer server
+  const configured = import.meta.env && import.meta.env.VITE_MULTIPLAYER_URL;
+  if (configured) return normalizeServerUrl(configured);
   const { protocol, hostname, port, host } = window.location;
   // dev (vite) and preview servers do not host the multiplayer socket: use the game server port
   if (port === '5173' || port === '4173') return `ws://${hostname}:8787/ws`;
-  if (protocol === 'file:' || hostname.endsWith('github.io')) return '';
+  // static hosts cannot run the socket server themselves
+  if (protocol === 'file:' || hostname.endsWith('github.io') || hostname.endsWith('vercel.app')) return '';
   return `${protocol === 'https:' ? 'wss' : 'ws'}://${host}/ws`;
 }
 
@@ -44,6 +60,7 @@ export class Net {
   }
 
   connect(url, hello) {
+    url = normalizeServerUrl(url);
     this.disconnect(true);
     this.url = url;
     this.status = 'connecting';
@@ -64,7 +81,7 @@ export class Net {
           ws.close();
           reject(new Error('Could not reach the server'));
         }
-      }, 6000);
+      }, 60000); // free hosting tiers can take up to a minute to wake up
       ws.onmessage = (e) => {
         let m;
         try { m = JSON.parse(e.data); } catch { return; }
